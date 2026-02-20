@@ -22,6 +22,7 @@ const sseClients = new Map();
 const mcpProcesses = new Map();
 
 app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Authorization, Content-Type, Cache-Control");
@@ -72,6 +73,7 @@ app.use(authenticate);
 // OAUTH 2.0
 // ============================================
 app.get("/.well-known/oauth-authorization-server", (req, res) => {
+  console.log("[Discovery] Hit from", req.ip, req.headers["user-agent"]);
   const baseUrl = "https://playwright-mcp.data-coeur.com";
   res.json({
     issuer: baseUrl,
@@ -85,6 +87,7 @@ app.get("/.well-known/oauth-authorization-server", (req, res) => {
 });
 
 app.get("/oauth/authorize", (req, res) => {
+  console.log("[OAuth Authorize] Hit", req.query);
   const { client_id, redirect_uri, state } = req.query;
   if (client_id !== OAUTH_CONFIG.clientId) {
     return res.status(403).json({ error: "invalid_client" });
@@ -98,9 +101,24 @@ app.get("/oauth/authorize", (req, res) => {
 });
 
 app.post("/oauth/token", (req, res) => {
-  const { grant_type, code, client_id, client_secret } = req.body;
-  if (client_secret !== OAUTH_CONFIG.clientSecret) {
-    return res.status(403).json({ error: "invalid_client_secret" });
+  console.log("[OAuth Token] Hit", { grant_type: req.body.grant_type, has_code: !!req.body.code, has_client_id: !!req.body.client_id, has_client_secret: !!req.body.client_secret, auth_header: req.headers.authorization ? "present" : "absent" });
+  let { grant_type, code, client_id, client_secret } = req.body;
+  
+  // Support client_secret_basic (HTTP Basic Auth)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Basic ")) {
+    try {
+      const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
+      const [basicId, basicSecret] = decoded.split(":");
+      if (!client_id) client_id = basicId;
+      if (!client_secret) client_secret = basicSecret;
+      console.log("[OAuth Token] Using Basic Auth credentials");
+    } catch (e) { console.error("[OAuth Token] Failed to decode Basic Auth"); }
+  }
+  
+  if (!client_secret || client_secret !== OAUTH_CONFIG.clientSecret) {
+    console.log("[OAuth Token] Invalid secret", { got: client_secret ? client_secret.substring(0, 8) + "..." : "none" });
+    return res.status(401).json({ error: "invalid_client" });
   }
   if (grant_type === "authorization_code") {
     if (!OAUTH_CONFIG.authCodes.has(code)) return res.status(400).json({ error: "invalid_grant" });
