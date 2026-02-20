@@ -114,7 +114,7 @@ function validateDockerCommand(cmd) {
 // OAUTH 2.0 DISCOVERY
 // ============================================
 app.get('/.well-known/oauth-authorization-server', (req, res) => {
-  const baseUrl = 'https://ecg-dev.data-coeur.com/mcp';
+  const baseUrl = 'https://ecg-dev.data-coeur.com';
   res.json({
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/oauth/authorize`,
