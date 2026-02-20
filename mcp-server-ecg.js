@@ -93,6 +93,23 @@ function generateSessionId() {
 // No Gemini support for ECG Pipeline
 
 // Container scoping - only allow docker commands targeting ecg-dev containers
+const ALLOWED_CONTAINER_PREFIX = 'ecg-dev-';
+function validateDockerCommand(cmd) {
+  if (cmd.startsWith('docker-compose') || cmd.startsWith('docker compose')) return true;
+  if (cmd.startsWith('docker ')) {
+    const parts = cmd.split(/\s+/);
+    const subCmd = parts[1];
+    if (['image','images','network','volume','system','info','version'].includes(subCmd)) return true;
+    if (['exec','logs','inspect','stop','start','restart','top','stats'].includes(subCmd)) {
+      return parts.some(p => p.startsWith(ALLOWED_CONTAINER_PREFIX));
+    }
+    if (subCmd === 'ps') return true;
+    if (subCmd === 'prune') return true;
+    return false;
+  }
+  return true;
+}
+
 // ============================================
 // OAUTH 2.0 DISCOVERY
 // ============================================
@@ -384,6 +401,30 @@ app.post('/mcp/rpc', async (req, res) => {
                 },
               },
             },
+            {
+              name: 'docker_prune',
+              description: 'Clean up Docker images, containers, and volumes',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  images: { type: 'boolean', default: true, description: 'Prune unused images' },
+                  volumes: { type: 'boolean', default: false, description: 'Prune unused volumes' },
+                  all: { type: 'boolean', default: false, description: 'Remove all unused images, not just dangling' },
+                },
+              },
+            },
+            {
+              name: 'docker_exec',
+              description: 'Execute a command inside a running ecg-dev container',
+              inputSchema: {
+                type: 'object',
+                required: ['container', 'command'],
+                properties: {
+                  container: { type: 'string', description: 'Container name (ecg-dev-web, ecg-dev-database, ecg-dev-phpmyadmin, ecg-dev-deepecg)' },
+                  command: { type: 'string', description: 'Command to execute inside the container' },
+                },
+              },
+            },
 
             {
               name: 'file_read',
@@ -602,6 +643,30 @@ async function handleToolCall(name, args) {
         if (args.services?.length) cmd += ` ${args.services.join(' ')}`;
         const result = execCommand(cmd);
         return { content: [{ type: 'text', text: result.success ? `Build completed:\n${result.output}` : result.error }] };
+      }
+      
+      case 'docker_prune': {
+        const results = [];
+        if (args.images !== false) {
+          let cmd = 'docker image prune -f';
+          if (args.all) cmd += ' -a';
+          const r = execCommand(cmd);
+          results.push('Images: ' + (r.success ? r.output : r.error));
+        }
+        if (args.volumes) {
+          const r = execCommand('docker volume prune -f');
+          results.push('Volumes: ' + (r.success ? r.output : r.error));
+        }
+        return { content: [{ type: 'text', text: results.join('\n') || 'Prune completed' }] };
+      }
+
+      case 'docker_exec': {
+        const container = args.container;
+        if (!container || !container.startsWith('ecg-dev-')) {
+          return { content: [{ type: 'text', text: 'Container must start with ecg-dev-' }], isError: true };
+        }
+        const result = execCommand('docker exec ' + container + ' ' + args.command);
+        return { content: [{ type: 'text', text: result.output || result.error || 'No output' }] };
       }
       
       case 'file_read': {
