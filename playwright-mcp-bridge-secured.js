@@ -13,7 +13,7 @@ const PORT = process.env.MCP_PORT || 3000;
 
 const OAUTH_CONFIG = {
   clientId: "playwright-mcp-client",
-  clientSecret: process.env.OAUTH_CLIENT_SECRET || crypto.randomBytes(32).toString("hex"),
+  clientSecret: process.env.OAUTH_CLIENT_SECRET || 'a31361ed76a2ef363135e4d71161421975450e8fb85c5dddf69751d0c88445d8',
   tokens: new Map(),
   authCodes: new Map(),
 };
@@ -85,7 +85,10 @@ app.get("/.well-known/oauth-authorization-server", (req, res) => {
 });
 
 app.get("/oauth/authorize", (req, res) => {
-  const { redirect_uri, state } = req.query;
+  const { client_id, redirect_uri, state } = req.query;
+  if (client_id !== OAUTH_CONFIG.clientId) {
+    return res.status(403).json({ error: "invalid_client" });
+  }
   const authCode = generateToken();
   OAUTH_CONFIG.authCodes.set(authCode, { createdAt: Date.now() });
   const url = new URL(redirect_uri);
@@ -95,7 +98,10 @@ app.get("/oauth/authorize", (req, res) => {
 });
 
 app.post("/oauth/token", (req, res) => {
-  const { grant_type, code } = req.body;
+  const { grant_type, code, client_id, client_secret } = req.body;
+  if (client_secret !== OAUTH_CONFIG.clientSecret) {
+    return res.status(403).json({ error: "invalid_client_secret" });
+  }
   if (grant_type === "authorization_code") {
     if (!OAUTH_CONFIG.authCodes.has(code)) return res.status(400).json({ error: "invalid_grant" });
     OAUTH_CONFIG.authCodes.delete(code);
