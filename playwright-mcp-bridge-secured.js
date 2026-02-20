@@ -138,8 +138,8 @@ app.get("/health", (req, res) => res.json({ status: "ok", service: "playwright-m
 // PLAYWRIGHT MCP PROCESS MANAGEMENT
 // ============================================
 function spawnPlaywrightMCP(sessionId) {
-  const npxPath = process.env.NPX_PATH || "npx";
-  const child = spawn(npxPath, ["@playwright/mcp@latest", "--headless"], {
+  // Use globally installed playwright-mcp binary
+  const child = spawn("playwright-mcp", ["--headless"], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium" },
   });
