@@ -190,6 +190,7 @@ function sendToChild(sessionId, message) {
 // MCP ENDPOINTS (auth required via middleware)
 // ============================================
 app.get("/mcp/rpc", (req, res) => {
+  console.log("[MCP SSE] New connection", { hasAuth: !!req.headers.authorization });
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -216,6 +217,7 @@ app.get("/mcp/rpc", (req, res) => {
 
 app.post("/mcp/rpc", (req, res) => {
   const sessionId = req.query.sessionId;
+  console.log("[MCP POST]", { sessionId, method: req.body?.method, hasAuth: !!req.headers.authorization });
   if (!sessionId || !mcpProcesses.has(sessionId)) {
     return res.status(400).json({ error: "Invalid session" });
   }
