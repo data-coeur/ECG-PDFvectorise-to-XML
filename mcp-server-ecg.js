@@ -93,22 +93,6 @@ function generateSessionId() {
 // No Gemini support for ECG Pipeline
 
 // Container scoping - only allow docker commands targeting ecg-dev containers
-const ALLOWED_CONTAINER_PREFIX = "ecg-dev-";
-function validateDockerCommand(cmd) {
-  if (cmd.startsWith("docker-compose") || cmd.startsWith("docker compose")) return true;
-  if (cmd.startsWith("docker ")) {
-    const parts = cmd.split(/\s+/);
-    const subCmd = parts[1];
-    if (["image","images","network","volume","system","info","version"].includes(subCmd)) return true;
-    if (["exec","logs","inspect","stop","start","restart","top","stats"].includes(subCmd)) {
-      return parts.some(p => p.startsWith(ALLOWED_CONTAINER_PREFIX));
-    }
-    if (subCmd === "ps") return true;
-    return false;
-  }
-  return true;
-}
-
 // ============================================
 // OAUTH 2.0 DISCOVERY
 // ============================================
@@ -225,8 +209,8 @@ function authenticate(req, res, next) {
   // Routes sans auth
   if (req.path === '/health' ||
       req.path.startsWith('/.well-known/') ||
-      req.path.startsWith('/oauth/') ||
-      req.path.startsWith('/mcp/')) {
+      req.path.startsWith('/oauth/')) {
+
     return next();
   }
   
@@ -400,18 +384,7 @@ app.post('/mcp/rpc', async (req, res) => {
                 },
               },
             },
-            {
-              name: 'docker_prune',
-              description: 'Clean up Docker images, containers, and volumes',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  images: { type: 'boolean', default: true, description: 'Prune unused images' },
-                  volumes: { type: 'boolean', default: false, description: 'Prune unused volumes' },
-                  all: { type: 'boolean', default: false, description: 'Remove all unused images, not just dangling' },
-                },
-              },
-            },
+
             {
               name: 'file_read',
               description: 'Read a file from the ECG Pipeline project',
@@ -536,18 +509,7 @@ app.post('/mcp/rpc', async (req, res) => {
                 },
               },
             },
-            {
-              name: 'shell_exec',
-              description: 'Execute shell command (docker, docker-compose, cat, ls, head, tail, mysql only)',
-              inputSchema: {
-                type: 'object',
-                required: ['command'],
-                properties: {
-                  command: { type: 'string', description: 'Command to execute' },
-                  cwd: { type: 'string', default: '.', description: 'Working directory' },
-                },
-              },
-            },
+
             {
               name: 'batch',
               description: 'Execute multiple operations at once',
@@ -561,7 +523,7 @@ app.post('/mcp/rpc', async (req, res) => {
                     items: {
                       type: 'object',
                       properties: {
-                        type: { type: 'string', enum: ['file_write', 'file_delete', 'shell_exec', 'docker_restart'] },
+                        type: { type: 'string', enum: ['file_write', 'file_delete', 'docker_restart'] },
                         path: { type: 'string' },
                         content: { type: 'string' },
                         command: { type: 'string' },
@@ -642,21 +604,6 @@ async function handleToolCall(name, args) {
         return { content: [{ type: 'text', text: result.success ? `Build completed:\n${result.output}` : result.error }] };
       }
       
-      case 'docker_prune': {
-        const results = [];
-        if (args.images !== false) {
-          let cmd = 'docker image prune -f';
-          if (args.all) cmd += ' -a';
-          const r = execCommand(cmd);
-          results.push(`Images: ${r.success ? r.output : r.error}`);
-        }
-        if (args.volumes) {
-          const r = execCommand('docker volume prune -f');
-          results.push(`Volumes: ${r.success ? r.output : r.error}`);
-        }
-        return { content: [{ type: 'text', text: results.join('\n') || 'Prune completed' }] };
-      }
-        
       case 'file_read': {
         const content = await fs.readFile(sanitizePath(args.path), 'utf-8');
         return { content: [{ type: 'text', text: content }] };
@@ -784,19 +731,6 @@ async function handleToolCall(name, args) {
         return { content: [{ type: 'text', text: result.success ? `Pushed to ${branch}` : result.error }] };
       }
         
-      case 'shell_exec': {
-        const allowed = ['docker', 'docker-compose', 'cat', 'ls', 'pwd', 'head', 'tail', 'wc', 'echo', 'find', 'rm', 'chmod', 'mkdir', 'cp', 'mv', 'grep', 'touch', 'mysql'];
-        const cmdBase = args.command.split(' ')[0];
-        if (!allowed.includes(cmdBase)) {
-          return { content: [{ type: 'text', text: `Command not allowed: ${cmdBase}. Allowed: ${allowed.join(', ')}` }], isError: true };
-        }
-        if (!validateDockerCommand(args.command)) {
-          return { content: [{ type: "text", text: "Docker command must target ecg-dev containers only" }], isError: true };
-        }
-        const result = execCommand(args.command, sanitizePath(args.cwd || '.'));
-        return { content: [{ type: 'text', text: result.output || result.error || 'No output' }] };
-      }
-        
       case 'batch': {
         const results = [];
         for (const op of args.operations || []) {
@@ -813,7 +747,6 @@ async function handleToolCall(name, args) {
                 await fs.unlink(sanitizePath(op.path));
                 opResult = `✓ Deleted: ${op.path}`;
                 break;
-              case 'shell_exec':
                 const shellResult = execCommand(op.command, sanitizePath(op.cwd || '.'));
                 opResult = `✓ Exec: ${shellResult.output || shellResult.error}`;
                 break;
