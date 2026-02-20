@@ -288,7 +288,7 @@ app.get('/mcp/rpc', (req, res) => {
   // Envoyer l'endpoint pour les messages
   const endpointEvent = {
     type: 'endpoint',
-    url: `/mcp/rpc?sessionId=${sessionId}`,
+    url: `/mcp/mcp/rpc?sessionId=${sessionId}`,
   };
   res.write(`event: endpoint\ndata: ${JSON.stringify(endpointEvent)}\n\n`);
   
