@@ -9,7 +9,7 @@ Full ECG analysis pipeline: upload vectorized PDF ECG → extract signal → aut
 ## Architecture
 
 ### Pipeline Flow
-1. User uploads PDF ECG via web interface (`ecg_extractor.html`)
+1. User uploads PDF ECG via web interface (`index.html`)
 2. Client-side JS extracts signal from vectorized PDF (SVG paths → voltage samples)
 3. Extracted signal sent to `ecg_receive.php` → saved in multiple formats (EDF+, WFDB, DICOM, HDF5, WebP)
 4. Signal forwarded to DeepECGAnalyser backend (FastAPI) for AI diagnosis
@@ -32,13 +32,13 @@ Full ECG analysis pipeline: upload vectorized PDF ECG → extract signal → aut
 ```
 ecg-dev/
 ├── src/                    # PHP web source (Apache document root)
-│   ├── ecg_extractor.html  # Main UI — PDF upload + signal extraction
+│   ├── index.html          # Main UI — PDF upload + signal extraction
 │   ├── ecg_receive.php     # Signal receiver — saves in 5 formats
 │   ├── data/               # Output directory for extracted ECGs
 │   └── ecg_data/           # Sample/test data
 ├── deepecg/                # Cloned from github.com/benoitleq/DeepECGAnalyser
 │   ├── backend/            # FastAPI app
-│   └── frontend/           # React frontend (not used yet, we use ecg_extractor.html)
+│   └── frontend/           # React frontend (not used yet, we use index.html)
 ├── data/                   # Docker volumes (gitignored)
 │   ├── mysql/
 │   ├── deepecg-temp/
@@ -59,7 +59,7 @@ Ignore when analyzing:
 - `node_modules/`
 
 ## Focus Areas
-- `src/ecg_extractor.html` — Signal extraction UI
+- `src/index.html` — Signal extraction UI
 - `src/ecg_receive.php` — Signal processing + format conversion
 - `deepecg/backend/app/` — AI analysis backend
 - `docker-compose.yml` — Service orchestration

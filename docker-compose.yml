@@ -73,6 +73,20 @@ services:
       - default
       - dev-network
 
+  deepecg-frontend:
+    build:
+      context: ./deepecg/frontend
+      dockerfile: Dockerfile
+    container_name: ecg-dev-deepecg-frontend
+    ports:
+      - "${DEEPECG_FRONTEND_PORT}:5173"
+    depends_on:
+      - deepecg-backend
+    restart: unless-stopped
+    networks:
+      - default
+      - dev-network
+
   # AI Engine — requires GPU, kept as profile (start manually when GPU available)
   # To start: docker compose --profile gpu up -d ai-engine
   ai-engine:

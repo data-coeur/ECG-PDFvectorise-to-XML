@@ -2,7 +2,7 @@
 /**
  * ecg_receive.php — ECG Signal Receiver & Multi-Format Converter
  * 
- * Receives JSON from ecg_extractor.html, saves in 5 formats:
+ * Receives JSON from index.html, saves in 5 formats:
  * EDF+, WFDB, DICOM Waveform, HDF5 (simple), WebP image
  * Returns JSON with download links.
  * 

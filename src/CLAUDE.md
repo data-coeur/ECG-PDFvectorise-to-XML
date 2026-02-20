@@ -6,11 +6,11 @@ Extraire les signaux ECG numériques depuis des PDF vectorisés (tout fabricant)
 ## Architecture
 
 ```
-ecg_extractor.html  →  POST JSON  →  ecg_receive.php  →  data/*.{edf,hea,dat,dcm,h5,webp}
+index.html  →  POST JSON  →  ecg_receive.php  →  data/*.{edf,hea,dat,dcm,h5,webp}
    (client JS)                          (serveur PHP)
 ```
 
-### Client (`ecg_extractor.html`)
+### Client (`index.html`)
 - **pdf.js 4.9.155** (CDN) pour parser le PDF côté client
 - Parse `getOperatorList()` pour extraire les polylignes vectorielles (moveTo/lineTo/stroke)
 - Applique la transformation viewport (gère la rotation des pages A4 landscape)
