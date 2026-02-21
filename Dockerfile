@@ -1,5 +1,6 @@
 FROM php:8.3-apache
 
+
 # Enable Apache mod_rewrite
 RUN a2enmod rewrite headers
 
