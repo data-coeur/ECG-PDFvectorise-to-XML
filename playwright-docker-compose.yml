@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  # Official Microsoft Playwright MCP image
+  playwright:
+    image: mcr.microsoft.com/playwright/mcp
+    container_name: ecg-dev-playwright
+    init: true
+    entrypoint: node
+    command: ["cli.js", "--headless", "--browser", "chromium", "--no-sandbox", "--port", "8931", "--host", "0.0.0.0", "--allowed-hosts", "*"]
+    restart: always
+    networks:
+      - dev-network
+
+  # Thin OAuth proxy for claude.ai
+  oauth-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.oauth
+    container_name: playwright-mcp
+    ports:
+      - "8386:3000"
+    environment:
+      - PLAYWRIGHT_URL=http://ecg-dev-playwright:8931
+      - MCP_PORT=3000
+    depends_on:
+      - playwright
+    restart: always
+    networks:
+      - dev-network
+
+networks:
+  dev-network:
+    external: true
