@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Playwright MCP Bridge v2 — stdio-to-HTTP/SSE proxy (SECURED)
- * Wraps @playwright/mcp as child process, exposes JSON-RPC over SSE for claude.ai
+ * Playwright MCP Bridge v3 — stdio-to-HTTP proxy (SECURED)
+ * Supports both SSE transport and Streamable HTTP transport
  * All /mcp/ endpoints require OAuth token
  */
 const { spawn } = require("child_process");
@@ -13,72 +13,51 @@ const PORT = process.env.MCP_PORT || 3000;
 
 const OAUTH_CONFIG = {
   clientId: "playwright-mcp-client",
-  clientSecret: process.env.OAUTH_CLIENT_SECRET || 'a31361ed76a2ef363135e4d71161421975450e8fb85c5dddf69751d0c88445d8',
+  clientSecret: process.env.OAUTH_CLIENT_SECRET || "a31361ed76a2ef363135e4d71161421975450e8fb85c5dddf69751d0c88445d8",
   tokens: new Map(),
   authCodes: new Map(),
 };
 
-const sseClients = new Map();
-const mcpProcesses = new Map();
+const sessions = new Map();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Authorization, Content-Type, Cache-Control");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Authorization, Content-Type, Cache-Control, Mcp-Session-Id");
+  res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.header("Access-Control-Expose-Headers", "Mcp-Session-Id");
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 
 function generateToken() { return crypto.randomBytes(32).toString("hex"); }
+function generateSessionId() { return crypto.randomBytes(16).toString("hex"); }
 
-// ============================================
-// AUTH MIDDLEWARE — /mcp/ requires valid OAuth token
-// ============================================
+// AUTH MIDDLEWARE
 function authenticate(req, res, next) {
-  if (req.path === "/health" ||
-      req.path.startsWith("/.well-known/") ||
-      req.path.startsWith("/oauth/")) {
-    return next();
-  }
-
+  if (req.path === "/health" || req.path.startsWith("/.well-known/") || req.path.startsWith("/oauth/")) return next();
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    console.log("[Auth] No authorization header for", req.method, req.path);
-    return res.status(401).json({ error: "No authorization header" });
-  }
-
+  if (!authHeader) { console.log("[Auth] No auth for", req.method, req.path); return res.status(401).json({ error: "unauthorized" }); }
   const [type, token] = authHeader.split(" ");
-  if (type !== "Bearer") {
-    return res.status(401).json({ error: "Invalid auth type" });
-  }
-
+  if (type !== "Bearer") return res.status(401).json({ error: "invalid_auth_type" });
   const tokenData = OAUTH_CONFIG.tokens.get(token);
   if (tokenData && tokenData.type === "access") {
-    const age = (Date.now() - tokenData.createdAt) / 1000;
-    if (age < tokenData.expiresIn) {
-      return next();
-    }
+    if ((Date.now() - tokenData.createdAt) / 1000 < tokenData.expiresIn) return next();
     OAUTH_CONFIG.tokens.delete(token);
   }
-
-  console.log("[Auth] Invalid or expired token for", req.method, req.path);
-  res.status(401).json({ error: "Invalid or expired token" });
+  res.status(401).json({ error: "invalid_token" });
 }
-
 app.use(authenticate);
 
-// ============================================
 // OAUTH 2.0
-// ============================================
 app.get("/.well-known/oauth-authorization-server", (req, res) => {
-  console.log("[Discovery] Hit from", req.ip, req.headers["user-agent"]);
+  console.log("[Discovery] Hit from", req.ip);
   const baseUrl = "https://playwright-mcp.data-coeur.com";
   res.json({
     issuer: baseUrl,
-    authorization_endpoint: `${baseUrl}/oauth/authorize`,
-    token_endpoint: `${baseUrl}/oauth/token`,
+    authorization_endpoint: baseUrl + "/oauth/authorize",
+    token_endpoint: baseUrl + "/oauth/token",
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
@@ -87,11 +66,9 @@ app.get("/.well-known/oauth-authorization-server", (req, res) => {
 });
 
 app.get("/oauth/authorize", (req, res) => {
-  console.log("[OAuth Authorize] Hit", req.query);
+  console.log("[OAuth] Authorize:", req.query.client_id);
   const { client_id, redirect_uri, state } = req.query;
-  if (client_id !== OAUTH_CONFIG.clientId) {
-    return res.status(403).json({ error: "invalid_client" });
-  }
+  if (client_id !== OAUTH_CONFIG.clientId) return res.status(403).json({ error: "invalid_client" });
   const authCode = generateToken();
   OAUTH_CONFIG.authCodes.set(authCode, { createdAt: Date.now() });
   const url = new URL(redirect_uri);
@@ -101,23 +78,18 @@ app.get("/oauth/authorize", (req, res) => {
 });
 
 app.post("/oauth/token", (req, res) => {
-  console.log("[OAuth Token] Hit", { grant_type: req.body.grant_type, has_code: !!req.body.code, has_client_id: !!req.body.client_id, has_client_secret: !!req.body.client_secret, auth_header: req.headers.authorization ? "present" : "absent" });
   let { grant_type, code, client_id, client_secret } = req.body;
-  
-  // Support client_secret_basic (HTTP Basic Auth)
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Basic ")) {
     try {
       const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
-      const [basicId, basicSecret] = decoded.split(":");
-      if (!client_id) client_id = basicId;
-      if (!client_secret) client_secret = basicSecret;
-      console.log("[OAuth Token] Using Basic Auth credentials");
-    } catch (e) { console.error("[OAuth Token] Failed to decode Basic Auth"); }
+      const parts = decoded.split(":");
+      if (!client_id) client_id = parts[0];
+      if (!client_secret) client_secret = parts[1];
+    } catch (e) {}
   }
-  
   if (!client_secret || client_secret !== OAUTH_CONFIG.clientSecret) {
-    console.log("[OAuth Token] Invalid secret", { got: client_secret ? client_secret.substring(0, 8) + "..." : "none" });
+    console.log("[OAuth] Invalid secret");
     return res.status(401).json({ error: "invalid_client" });
   }
   if (grant_type === "authorization_code") {
@@ -128,110 +100,183 @@ app.post("/oauth/token", (req, res) => {
   const newRefresh = generateToken();
   OAUTH_CONFIG.tokens.set(accessToken, { type: "access", createdAt: Date.now(), expiresIn: 3600 * 24 * 30 });
   OAUTH_CONFIG.tokens.set(newRefresh, { type: "refresh", createdAt: Date.now() });
+  console.log("[OAuth] Token issued");
   res.json({ access_token: accessToken, token_type: "Bearer", expires_in: 3600 * 24 * 30, refresh_token: newRefresh });
 });
 
-// Health (no auth)
-app.get("/health", (req, res) => res.json({ status: "ok", service: "playwright-mcp-bridge" }));
+app.get("/health", (req, res) => res.json({ status: "ok", service: "playwright-mcp-bridge-v3" }));
 
-// ============================================
-// PLAYWRIGHT MCP PROCESS MANAGEMENT
-// ============================================
-function spawnPlaywrightMCP(sessionId) {
-  // Use globally installed playwright-mcp binary
+// PLAYWRIGHT PROCESS MANAGEMENT
+function spawnPlaywright(sessionId) {
   const child = spawn("playwright-mcp", ["--headless"], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium" },
+    env: Object.assign({}, process.env, {
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium"
+    }),
   });
 
-  let stdioBuf = Buffer.alloc(0);
-  child.stdout.on("data", (chunk) => {
-    stdioBuf = Buffer.concat([stdioBuf, chunk]);
-    while (true) {
-      const headerEnd = stdioBuf.indexOf("\r\n\r\n");
-      if (headerEnd === -1) break;
-      const header = stdioBuf.slice(0, headerEnd).toString();
-      const match = header.match(/Content-Length:\s*(\d+)/i);
-      if (!match) { stdioBuf = stdioBuf.slice(headerEnd + 4); continue; }
-      const len = parseInt(match[1]);
-      const bodyStart = headerEnd + 4;
-      if (stdioBuf.length < bodyStart + len) break;
-      const body = stdioBuf.slice(bodyStart, bodyStart + len).toString();
-      stdioBuf = stdioBuf.slice(bodyStart + len);
+  let lineBuf = "";
+
+  child.stdout.on("data", function(chunk) {
+    lineBuf += chunk.toString();
+    var lines = lineBuf.split("\n");
+    lineBuf = lines.pop();
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
       try {
-        const msg = JSON.parse(body);
-        const client = sseClients.get(sessionId);
-        if (client) {
-          client.res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+        var msg = JSON.parse(line);
+        var sess = sessions.get(sessionId);
+        if (!sess) continue;
+        if (msg.id !== undefined && sess.pendingRequests.has(msg.id)) {
+          sess.pendingRequests.get(msg.id).resolve(msg);
+          sess.pendingRequests.delete(msg.id);
         }
-      } catch (e) { console.error("[Bridge] Parse error:", e.message); }
+        if (sess.sseRes) {
+          sess.sseRes.write("event: message\ndata: " + JSON.stringify(msg) + "\n\n");
+        }
+      } catch (e) { /* skip non-JSON lines */ }
     }
   });
 
-  child.stderr.on("data", (d) => console.error("[Playwright]", d.toString()));
-  child.on("exit", (code) => {
-    console.log(`[Bridge] Playwright exited: ${code} session ${sessionId}`);
-    mcpProcesses.delete(sessionId);
+  child.stderr.on("data", function(d) { console.error("[Playwright]", d.toString().trim()); });
+  child.on("exit", function(code) {
+    console.log("[Bridge] Playwright exited:", code, "session", sessionId);
+    const sess = sessions.get(sessionId);
+    if (sess) {
+      for (const entry of sess.pendingRequests.values()) { entry.reject(new Error("Process exited")); }
+      sessions.delete(sessionId);
+    }
   });
 
-  mcpProcesses.set(sessionId, child);
   return child;
 }
 
-function sendToChild(sessionId, message) {
-  const child = mcpProcesses.get(sessionId);
-  if (!child) throw new Error("No MCP process for session");
-  const body = JSON.stringify(message);
-  const header = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n`;
-  child.stdin.write(header + body);
+function sendAndWait(sessionId, message, timeoutMs) {
+  return new Promise(function(resolve, reject) {
+    const sess = sessions.get(sessionId);
+    if (!sess || !sess.child) return reject(new Error("No session"));
+    const id = message.id;
+    if (id !== undefined) {
+      sess.pendingRequests.set(id, { resolve: resolve, reject: reject });
+    }
+    var bodyStr = JSON.stringify(message) + "\n";
+    sess.child.stdin.write(bodyStr);
+    if (id === undefined) return resolve(null);
+    setTimeout(function() {
+      if (sess.pendingRequests.has(id)) {
+        sess.pendingRequests.delete(id);
+        reject(new Error("Timeout"));
+      }
+    }, timeoutMs || 30000);
+  });
 }
 
-// ============================================
-// MCP ENDPOINTS (auth required via middleware)
-// ============================================
-app.get("/mcp/rpc", (req, res) => {
-  console.log("[MCP SSE] New connection", { hasAuth: !!req.headers.authorization });
+// MCP ENDPOINTS
+
+// POST /mcp/rpc — Streamable HTTP
+app.post("/mcp/rpc", async function(req, res) {
+  const message = req.body;
+  let sessionId = req.headers["mcp-session-id"] || req.query.sessionId;
+
+  console.log("[MCP POST]", JSON.stringify({ sid: sessionId || "none", method: message.method, id: message.id }));
+
+  // New session via initialize
+  if (!sessionId && message.method === "initialize") {
+    sessionId = generateSessionId();
+    sessions.set(sessionId, { child: null, sseRes: null, pendingRequests: new Map(), createdAt: Date.now() });
+    sessions.get(sessionId).child = spawnPlaywright(sessionId);
+    await new Promise(function(r) { setTimeout(r, 500); });
+    try {
+      const response = await sendAndWait(sessionId, message, 15000);
+      res.setHeader("Mcp-Session-Id", sessionId);
+      console.log("[MCP] Session created:", sessionId);
+      return res.json(response);
+    } catch (e) {
+      console.error("[MCP] Init failed:", e.message);
+      sessions.delete(sessionId);
+      return res.status(500).json({ jsonrpc: "2.0", id: message.id, error: { code: -32603, message: e.message } });
+    }
+  }
+
+  if (!sessionId || !sessions.has(sessionId)) {
+    return res.status(400).json({ error: "Invalid session" });
+  }
+
+  // Notification
+  if (message.id === undefined) {
+    try {
+      const sess = sessions.get(sessionId);
+      var bodyStr = JSON.stringify(message) + "\n";
+      sess.child.stdin.write(bodyStr);
+      return res.status(202).end();
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
+  // Request
+  try {
+    const response = await sendAndWait(sessionId, message, 60000);
+    res.setHeader("Mcp-Session-Id", sessionId);
+    return res.json(response);
+  } catch (e) {
+    console.error("[MCP] Failed:", e.message);
+    return res.status(500).json({ jsonrpc: "2.0", id: message.id, error: { code: -32603, message: e.message } });
+  }
+});
+
+// GET /mcp/rpc — SSE transport
+app.get("/mcp/rpc", function(req, res) {
+  const sessionId = req.query.sessionId || req.headers["mcp-session-id"];
+  console.log("[MCP SSE]", sessionId || "new");
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  const sessionId = crypto.randomBytes(16).toString("hex");
-  sseClients.set(sessionId, { res, createdAt: Date.now() });
-  spawnPlaywrightMCP(sessionId);
+  if (sessionId && sessions.has(sessionId)) {
+    sessions.get(sessionId).sseRes = res;
+  } else {
+    const newId = generateSessionId();
+    sessions.set(newId, { child: null, sseRes: res, pendingRequests: new Map(), createdAt: Date.now() });
+    sessions.get(newId).child = spawnPlaywright(newId);
+    res.write("event: endpoint\ndata: " + JSON.stringify({ type: "endpoint", url: "/mcp/rpc?sessionId=" + newId }) + "\n\n");
+  }
 
-  const endpointEvent = { type: "endpoint", url: `/mcp/rpc?sessionId=${sessionId}` };
-  res.write(`event: endpoint\ndata: ${JSON.stringify(endpointEvent)}\n\n`);
-
-  const heartbeat = setInterval(() => res.write(`: heartbeat\n\n`), 30000);
-
-  req.on("close", () => {
-    clearInterval(heartbeat);
-    sseClients.delete(sessionId);
-    const child = mcpProcesses.get(sessionId);
-    if (child) { child.kill(); mcpProcesses.delete(sessionId); }
-    console.log("[Bridge] Session closed:", sessionId);
+  const hb = setInterval(function() { res.write(": heartbeat\n\n"); }, 30000);
+  req.on("close", function() {
+    clearInterval(hb);
+    if (sessionId && sessions.has(sessionId)) sessions.get(sessionId).sseRes = null;
+    console.log("[MCP SSE] Closed");
   });
 });
 
-app.post("/mcp/rpc", (req, res) => {
-  const sessionId = req.query.sessionId;
-  console.log("[MCP POST]", { sessionId, method: req.body?.method, hasAuth: !!req.headers.authorization });
-  if (!sessionId || !mcpProcesses.has(sessionId)) {
-    return res.status(400).json({ error: "Invalid session" });
+// DELETE /mcp/rpc — Close session
+app.delete("/mcp/rpc", function(req, res) {
+  const sessionId = req.headers["mcp-session-id"];
+  if (sessionId && sessions.has(sessionId)) {
+    const sess = sessions.get(sessionId);
+    if (sess.child) sess.child.kill();
+    sessions.delete(sessionId);
   }
-  try {
-    sendToChild(sessionId, req.body);
-    res.json({ status: "sent" });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  res.status(200).end();
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Playwright MCP Bridge v2] Running on port ${PORT}`);
-  console.log(`  Auth: OAuth required on /mcp/*`);
-  console.log(`  SSE:  GET  /mcp/rpc`);
-  console.log(`  RPC:  POST /mcp/rpc?sessionId=...`);
+// Cleanup stale sessions
+setInterval(function() {
+  const now = Date.now();
+  for (const [id, sess] of sessions) {
+    if (now - sess.createdAt > 30 * 60 * 1000) {
+      if (sess.child) sess.child.kill();
+      sessions.delete(id);
+      console.log("[Cleanup] Stale:", id);
+    }
+  }
+}, 5 * 60 * 1000);
+
+app.listen(PORT, "0.0.0.0", function() {
+  console.log("[Playwright MCP Bridge v3] port " + PORT);
+  console.log("  POST /mcp/rpc — Streamable HTTP");
+  console.log("  GET  /mcp/rpc — SSE fallback");
+  console.log("  Auth: OAuth on /mcp/*");
 });
