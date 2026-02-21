@@ -551,6 +551,12 @@ app.post('/mcp/rpc', async (req, res) => {
               },
             },
 
+
+            {
+              name: 'vscode_tunnel_code',
+              description: 'Get the VS Code tunnel authentication code for GitHub device login. Use when a developer needs to connect to the VS Code tunnel.',
+              inputSchema: { type: 'object', properties: {} },
+            },
             {
               name: 'batch',
               description: 'Execute multiple operations at once',
@@ -669,6 +675,15 @@ async function handleToolCall(name, args) {
         return { content: [{ type: 'text', text: result.output || result.error || 'No output' }] };
       }
       
+
+      case 'vscode_tunnel_code': {
+        const logsResult = execSync('docker logs vscode-tunnel-ecg 2>&1 | grep "use code" | tail -1', { encoding: 'utf8', timeout: 5000 }).trim();
+        const match = logsResult.match(/use code ([A-Z0-9-]+)/i);
+        if (match) {
+          return { content: [{ type: 'text', text: 'VS Code tunnel auth code: ' + match[1] + '\nGo to https://github.com/login/device and enter this code.' }] };
+        }
+        return { content: [{ type: 'text', text: 'No pending auth code found. The tunnel may already be authenticated.' }] };
+      }
       case 'file_read': {
         const content = await fs.readFile(sanitizePath(args.path), 'utf-8');
         return { content: [{ type: 'text', text: content }] };

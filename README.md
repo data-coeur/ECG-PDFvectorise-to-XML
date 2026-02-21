@@ -36,7 +36,7 @@ PDF ECG (vectorisé)
 | ECG Extractor (app principale) | https://ecg-dev.data-coeur.com/ |
 | DeepECG Frontend | https://ecg-dev.data-coeur.com/deepecg/ |
 | DeepECG API (Swagger) | https://ecg-dev.data-coeur.com/api/deepecg/docs |
-| phpMyAdmin | https://ecg-dev.data-coeur.com/phpmyadmin/ *(IP whitelist)* |
+| phpMyAdmin | https://ecg-dev.data-coeur.com/phpmyadmin/ *(identifiants envoyés par email)* |
 
 ## État d'avancement
 
@@ -45,7 +45,8 @@ PDF ECG (vectorisé)
 - [x] DeepECG backend opérationnel (FastAPI)
 - [x] DeepECG frontend React déployé
 - [x] Infrastructure Docker complète + reverse proxy nginx + SSL
-- [x] MCP servers pour développement via Claude.ai et VS Code
+- [x] MCP servers pour développement via Claude.ai
+- [x] Navigation automatisée Playwright pour tests
 - [ ] Moteur IA DeepECG — adaptation CPU (actuellement profil GPU uniquement)
 - [ ] Intégration complète : extracteur → analyse DeepECG → résultats
 - [ ] Stockage des résultats en MySQL
@@ -53,47 +54,28 @@ PDF ECG (vectorisé)
 
 ## Développement (Vibe Coding)
 
-Deux méthodes pour travailler sur le code :
+### 1. Claude.ai (recommandé)
 
-### 1. Claude.ai (compte `data-coeur@proton.me`)
+Se connecter sur [claude.ai](https://claude.ai) avec le compte `data-coeur@proton.me`, puis ouvrir le projet **« Pipeline ECG (image/pdf/raw) to Diagnosis »**.
 
-Le projet est connecté à Claude.ai via un serveur MCP. Dans une conversation, Claude peut directement lire/écrire les fichiers, gérer Docker, et pousser sur Git.
+Dans ce projet, Claude a accès à deux connecteurs MCP :
+- **ECG Pipeline (DEV)** — lire/écrire les fichiers du projet, gérer Docker, pousser sur Git
+- **Playwright Browser** — naviguer sur les pages web, remplir des formulaires, prendre des captures d'écran, tester l'interface. Pour l'utiliser, préciser dans le prompt « utilise Playwright pour... » ou « va sur telle page et dis-moi ce que tu vois ».
 
-**Connecteurs disponibles** (Settings → Integrations) :
-- **ECG Pipeline (DEV)** — accès complet au projet (fichiers, Docker, Git)
-- **Playwright Browser** — navigation web automatisée pour tester les pages
-
-Pour utiliser : se connecter sur [claude.ai](https://claude.ai) avec le compte `data-coeur@proton.me`, vérifier que les connecteurs sont actifs dans les paramètres.
-
-### 2. VS Code Remote Tunnel (compte GitHub `data-coeur`)
+### 2. VS Code Remote Tunnel
 
 Un tunnel VS Code tourne sur le serveur, relié au compte GitHub `data-coeur@proton.me`.
 
-**Première connexion :**
-1. Installer VS Code
-2. Créer un profil dédié (pour ne pas mélanger avec son profil personnel) :
-   ```
-   # Windows
-   "C:\Program Files\Microsoft VS Code\Code.exe" --user-data-dir="%USERPROFILE%\VSCode-ECG"
-   ```
-3. Se connecter avec le compte GitHub `data-coeur@proton.me`
-4. Remote Explorer → `Serveur-ECG-Pipeline` → Connect
+**Connexion :**
+1. Installer [VS Code](https://code.visualstudio.com/)
+2. Installer l'extension **Remote - Tunnels** (`ms-vscode.remote-server`)
+3. Dans la palette de commandes : **Remote-Tunnels: Connect to Tunnel...** → se connecter avec le compte GitHub `data-coeur@proton.me`
+4. Sélectionner le tunnel `Serveur-ECG-Pipeline`
+5. Une fois connecté : **Fichier → Ouvrir un dossier...** → `/home/workspace`
 
-Le workspace s'ouvre sur `/home/workspace` qui contient le projet.
+**Utiliser son propre compte GitHub :**
 
-**Si le tunnel demande une ré-authentification :**
-```bash
-docker logs vscode-tunnel-ecg | grep "use code"
-```
-→ utiliser le dernier code affiché sur https://github.com/login/device
-
-### Playwright (navigateur automatisé)
-
-[Playwright](https://playwright.dev/) est disponible de deux façons :
-
-- **MCP (claude.ai)** : le connecteur « Playwright Browser » permet à Claude de naviguer sur le web, cliquer, remplir des formulaires, prendre des screenshots. Utile pour tester les pages du projet ou récupérer du contenu web.
-
-- **CLI (VS Code / terminal)** : Playwright est installé dans le conteneur `ecg-dev-playwright` (image officielle Microsoft). Peut servir pour des tests end-to-end automatisés.
+Si vous préférez utiliser votre compte GitHub personnel plutôt que `data-coeur@proton.me`, le tunnel doit être ré-autorisé. Demandez à Claude.ai (dans le projet Pipeline ECG) de vous fournir le code d'authentification VS Code tunnel — il peut le récupérer via la commande MCP `vscode_tunnel_code`. Entrez ensuite ce code sur https://github.com/login/device avec votre compte.
 
 ## Structure du projet
 
