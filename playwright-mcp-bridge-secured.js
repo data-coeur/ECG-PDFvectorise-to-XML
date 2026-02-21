@@ -108,7 +108,7 @@ app.get("/health", (req, res) => res.json({ status: "ok", service: "playwright-m
 
 // PLAYWRIGHT PROCESS MANAGEMENT
 function spawnPlaywright(sessionId) {
-  const child = spawn("playwright-mcp", ["--headless"], {
+  const child = spawn("playwright-mcp", ["--headless", "--no-sandbox", "--executable-path", "/usr/bin/chromium"], {
     stdio: ["pipe", "pipe", "pipe"],
     env: Object.assign({}, process.env, {
       PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium"
