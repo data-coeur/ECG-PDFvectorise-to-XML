@@ -73,9 +73,9 @@ Un tunnel VS Code tourne sur le serveur, relié au compte GitHub `data-coeur@pro
 2. Installer l'extension **Remote - Tunnels** (`ms-vscode.remote-server`)
 3. Dans la palette de commandes : **Remote-Tunnels: Connect to Tunnel...** → se connecter avec le compte GitHub `data-coeur@proton.me`
 4. Sélectionner le tunnel `Serveur-ECG-Pipeline`
-5. **Fichier → Ouvrir un dossier...** → `/home/workspace`
+5. **Fichier → Ouvrir un dossier...** → `/workspace/ecg-pipeline`
 
-> **Note :** Un tunnel VS Code est lié à un seul compte GitHub. Si le tunnel demande une ré-authentification (après un redémarrage serveur par exemple), demandez à Claude.ai dans le projet Pipeline ECG de récupérer le code via la commande `vscode_tunnel_code`, puis entrez-le sur https://github.com/login/device.
+> **Note :** Un tunnel VS Code est lié à un seul compte GitHub. Si le tunnel demande une ré-authentification (après un redémarrage serveur), demandez à Claude.ai dans le projet Pipeline ECG : « donne-moi le code d'authentification du tunnel VS Code ». Claude exécutera la commande nécessaire et vous donnera le code à entrer sur https://github.com/login/device.
 
 ### 3. Antigravity + SFTP
 
