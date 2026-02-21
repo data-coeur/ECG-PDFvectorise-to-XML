@@ -39,8 +39,8 @@ services:
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: ecg-dev-phpmyadmin
-    entrypoint: >
-      /bin/sh -c "chmod 1733 /sessions && chown www-data:www-data /sessions && /docker-entrypoint.sh apache2-foreground"
+    tmpfs:
+      - /sessions:mode=1733,uid=33,gid=33
     ports:
       - "${PHPMYADMIN_PORT}:80"
     environment:

@@ -74,10 +74,9 @@ docker compose up -d --build web     # Rebuild and restart web
 ```
 
 ### MySQL access
-```bash
-docker exec ecg-dev-database mysql -uecguser -p<password> ecgpipeline -e "SHOW TABLES;"
-```
-Credentials are in `.env` (MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE).
+The MCP provides a dedicated `mysql_query` tool that reads credentials from `.env` automatically:
+- `mysql_query(query="SHOW TABLES;")` — uses ecguser from .env
+- `mysql_query(query="SHOW DATABASES;", database="root")` — uses root credentials
 
 ## File Structure
 ```
