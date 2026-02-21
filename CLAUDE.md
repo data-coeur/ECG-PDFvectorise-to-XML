@@ -1,7 +1,10 @@
 # ECG Pipeline — Claude Configuration
 
 ## Project Overview
+
 Full ECG analysis pipeline: upload vectorized PDF ECG → extract signal → automated diagnosis.
+
+> **See also:** `README.md` for project overview, URLs, development setup (Vibe Coding), and Playwright usage.
 
 **Domain**: https://ecg-dev.data-coeur.com
 **Repo**: https://github.com/data-coeur/ecg-pipeline
@@ -22,6 +25,7 @@ Full ECG analysis pipeline: upload vectorized PDF ECG → extract signal → aut
 | database | ecg-dev-database | — | MySQL 8.0 — future: store results |
 | phpmyadmin | ecg-dev-phpmyadmin | 8301 | Database admin |
 | deepecg-backend | ecg-dev-deepecg | 8302 | FastAPI Python — ECG analysis API |
+| deepecg-frontend | ecg-dev-deepecg-frontend | 8303 | React (Vite) — DeepECG UI |
 | ai-engine | ecg-dev-ai-engine | — | GPU profile — HeartWise AI models (NOT ACTIVE) |
 
 ### Networks
