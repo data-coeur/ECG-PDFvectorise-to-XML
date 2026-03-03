@@ -6,12 +6,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ecg-dev-web
-    command: >
-      bash -c "groupadd -g 1019 datacoeur 2>/dev/null; usermod -aG datacoeur www-data; find /var/www/html -type d -exec chmod g+s {} +; apache2-foreground"
     ports:
-      - "${WEB_PORT}:80"
+      - "${WEB_PORT}:3000"
     volumes:
-      - ./src:/var/www/html
+      - ./src/data:/app/data
     depends_on:
       - database
     restart: unless-stopped

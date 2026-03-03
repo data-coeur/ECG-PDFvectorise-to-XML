@@ -1,29 +1,39 @@
-FROM php:8.3-apache
+# Stage 1: Build frontend
+FROM node:18-alpine AS frontend-builder
+WORKDIR /build
+COPY src/frontend/package*.json ./
+RUN npm install
+COPY src/frontend/ ./
+RUN npm run build
 
+# Stage 2: Install backend dependencies
+FROM node:18-alpine AS backend-builder
+WORKDIR /build
+COPY src/backend/package*.json ./
+RUN npm install
+COPY src/backend/ ./
+RUN npm run build
 
-# Enable Apache mod_rewrite
-RUN a2enmod rewrite headers
+# Stage 3: Production runtime
+FROM node:18-alpine
 
-# Install PHP extensions needed for ECG processing
-RUN apt-get update && apt-get install -y \
-    libfreetype6-dev libjpeg62-turbo-dev libpng-dev libwebp-dev \
-    libzip-dev unzip git curl fonts-dejavu-core \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
-    && docker-php-ext-install gd zip \
-    && rm -rf /var/lib/apt/lists/*
+# Install fonts for sharp SVG rendering
+RUN apk add --no-cache fontconfig font-dejavu
 
-# PHP config for large uploads (ECG PDFs)
-RUN echo "upload_max_filesize = 50M" > /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "post_max_size = 60M" >> /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "memory_limit = 256M" >> /usr/local/etc/php/conf.d/uploads.ini \
-    && echo "max_execution_time = 120" >> /usr/local/etc/php/conf.d/uploads.ini
+WORKDIR /app
 
-# Set document root
-ENV APACHE_DOCUMENT_ROOT=/var/www/html
-RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf \
-    && sed -ri -e "s!/var/www/!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+# Copy backend
+COPY --from=backend-builder /build/dist ./dist
+COPY --from=backend-builder /build/node_modules ./node_modules
+COPY --from=backend-builder /build/package.json ./
 
-# Create data directory with proper permissions
-RUN mkdir -p /var/www/html/data && chown -R www-data:www-data /var/www/html/data
+# Copy frontend build
+COPY --from=frontend-builder /build/dist ./frontend-dist
 
-WORKDIR /var/www/html
+# Create data directory
+RUN mkdir -p /app/data
+
+ENV PORT=3000
+EXPOSE 3000
+
+CMD ["node", "dist/server.js"]
