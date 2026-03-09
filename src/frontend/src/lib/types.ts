@@ -15,7 +15,7 @@ export interface BoundingBox {
 export interface Label { text: string; x: number; y: number }
 
 export interface Layout {
-  type: 'stacked_12x1' | 'sequential_6x2';
+  type: 'stacked_12x1' | 'sequential_6x2' | 'grid_4x3';
   tA: 'x' | 'y';
   vI: boolean;
 }

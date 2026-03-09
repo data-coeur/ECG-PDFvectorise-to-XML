@@ -8,6 +8,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const LEAD_NAMES = ['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'];
+const LEAD_ALIASES: Record<string, string> = {
+  'D1': 'I', 'D2': 'II', 'D3': 'III',
+  'DI': 'I', 'DII': 'II', 'DIII': 'III',
+};
+const ALL_LEAD_TOKENS = [...LEAD_NAMES, ...Object.keys(LEAD_ALIASES)];
 const OPS = pdfjsLib.OPS;
 
 // ── Matrix helpers (6-element affine: [a,b,c,d,e,f]) ──
@@ -42,16 +47,17 @@ async function extract(pg: PDFPageProxy, fn: string): Promise<ECGData | null> {
   for (const it of tc.items) {
     if (!('str' in it)) continue;
     const t = it.str.trim();
-    if (LEAD_NAMES.includes(t)) {
+    if (ALL_LEAD_TOKENS.includes(t)) {
       const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
-      lb.push({ text: t, x, y });
+      const normalized = LEAD_ALIASES[t] || t;
+      lb.push({ text: normalized, x, y });
     }
   }
 
   const tr = idTraces(ap);
   if (!tr.length) return null;
 
-  const sc = computeScale(vp);
+  const sc = computeScaleFromCalibration(ap, vp) || computeScale(vp);
   const lay = detectLayout(tr, vp);
   const ch = assign(tr, lb, lay);
 
@@ -224,6 +230,17 @@ function detectLayout(tr: Polyline[], vp: { width: number; height: number }): La
   const timeExtent = tA === 'x' ? vp.width : vp.height;
   const allWide = tr.every(t => (tA === 'x' ? t.bb!.dx : t.bb!.dy) > timeExtent * 0.6);
 
+  // Detect 4×3 grid: group traces by X center into columns
+  if (tA === 'x' && tr.length >= 12) {
+    const cxVals = tr.map(t => t.bb!.cx).sort((a, b) => a - b);
+    const cols = clusterValues(cxVals, vp.width * 0.1);
+    const cyVals = tr.map(t => t.bb!.cy).sort((a, b) => a - b);
+    const rows = clusterValues(cyVals, vp.height * 0.08);
+    if (cols.length >= 4 && rows.length >= 3) {
+      return { type: 'grid_4x3', tA, vI };
+    }
+  }
+
   const perpVals = tr.map(t => t.bb!.cy);
   const perpMin = Math.min(...perpVals), perpMax = Math.max(...perpVals);
   const perpMid = (perpMin + perpMax) / 2;
@@ -237,6 +254,17 @@ function detectLayout(tr: Polyline[], vp: { width: number; height: number }): La
   return { type: 'stacked_12x1', tA, vI };
 }
 
+// Group sorted values into clusters separated by gaps > threshold
+function clusterValues(sorted: number[], threshold: number): number[][] {
+  if (!sorted.length) return [];
+  const clusters: number[][] = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] - sorted[i - 1] > threshold) clusters.push([sorted[i]]);
+    else clusters[clusters.length - 1].push(sorted[i]);
+  }
+  return clusters;
+}
+
 function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: Point[] }[] {
   if (lay.type === 'stacked_12x1') {
     const perpKey = lay.tA === 'x' ? 'cy' : 'cx';
@@ -247,6 +275,10 @@ function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: 
       name: i < sl.length ? sl[i].text : i < LEAD_NAMES.length ? LEAD_NAMES[i] : `L${i + 1}`,
       pts: t.pts,
     }));
+  }
+
+  if (lay.type === 'grid_4x3') {
+    return assignGrid4x3(tr, lb);
   }
 
   const cyVals = tr.map(t => t.bb!.cy);
@@ -278,8 +310,78 @@ function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: 
   return ch;
 }
 
+// 4×3 grid: 4 columns (I/aVR/V1/V4, II/aVL/V2/V5, III/aVF/V3/V6) × 3 rows + optional rhythm strip
+function assignGrid4x3(tr: Polyline[], lb: Label[]): { name: string; pts: Point[] }[] {
+  // Separate rhythm strip (full-width trace spanning most of the page)
+  const widths = tr.map(t => t.bb!.dx);
+  const medWidth = [...widths].sort((a, b) => a - b)[Math.floor(widths.length / 2)];
+  const rhythmThreshold = medWidth * 1.8;
+  const rhythm = tr.filter(t => t.bb!.dx > rhythmThreshold);
+  const grid = tr.filter(t => t.bb!.dx <= rhythmThreshold);
+
+  // Cluster grid traces into columns by cx
+  const cxSorted = [...grid].sort((a, b) => a.bb!.cx - b.bb!.cx);
+  const colGroups: Polyline[][] = [[]];
+  for (const t of cxSorted) {
+    const last = colGroups[colGroups.length - 1];
+    if (last.length && t.bb!.cx - last[last.length - 1].bb!.cx > medWidth * 0.5) {
+      colGroups.push([t]);
+    } else {
+      last.push(t);
+    }
+  }
+
+  // Sort each column by cy (top to bottom)
+  for (const col of colGroups) col.sort((a, b) => a.bb!.cy - b.bb!.cy);
+
+  // Standard 4×3 grid order: col0=[I,II,III], col1=[aVR,aVL,aVF], col2=[V1,V2,V3], col3=[V4,V5,V6]
+  const gridOrder = [
+    ['I','II','III'], ['aVR','aVL','aVF'], ['V1','V2','V3'], ['V4','V5','V6'],
+  ];
+
+  const ch: { name: string; pts: Point[] }[] = [];
+
+  // Try label-based matching first: find the closest label for each trace
+  if (lb.length >= 12) {
+    for (const t of [...grid, ...rhythm]) {
+      let bestLabel = '', bestDist = Infinity;
+      for (const l of lb) {
+        const dx = l.x - t.bb!.x0;
+        const dy = l.y - t.bb!.y0;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestDist) { bestDist = dist; bestLabel = l.text; }
+      }
+      // Avoid assigning the same label twice (for rhythm strip duplicate labels)
+      const usedNames = ch.map(c => c.name);
+      const name = usedNames.includes(bestLabel) ? bestLabel + '_rhythm' : bestLabel;
+      ch.push({ name, pts: t.pts });
+    }
+  } else {
+    // Positional assignment
+    for (let ci = 0; ci < colGroups.length && ci < gridOrder.length; ci++) {
+      for (let ri = 0; ri < colGroups[ci].length && ri < gridOrder[ci].length; ri++) {
+        ch.push({ name: gridOrder[ci][ri], pts: colGroups[ci][ri].pts });
+      }
+    }
+    for (const t of rhythm) {
+      ch.push({ name: 'II_rhythm', pts: t.pts });
+    }
+  }
+
+  // Sort by standard lead order
+  ch.sort((a, b) => {
+    const na = a.name.replace('_rhythm', ''), nb = b.name.replace('_rhythm', '');
+    const ia = LEAD_NAMES.indexOf(na), ib = LEAD_NAMES.indexOf(nb);
+    const oa = ia < 0 ? 99 : ia, ob = ib < 0 ? 99 : ib;
+    if (oa !== ob) return oa - ob;
+    return a.name.includes('_rhythm') ? 1 : -1;
+  });
+  return ch;
+}
+
 function detectMfr(tr: Polyline[], fn: string): string {
   const f = fn.toLowerCase();
+  if (f.startsWith('ek_') || f.includes('mortara') || f.includes('burdick')) return 'Mortara/Burdick';
   if (f.includes('muse') || f.includes('12sl')) return 'GE MUSE';
   if (f.includes('schiller') || f.includes('scm') || f.includes('nodata')) return 'Schiller';
   const a = tr.reduce((s, t) => s + t.pts.length, 0) / tr.length;
@@ -301,6 +403,31 @@ function computeScale(vp: { width: number; height: number }): ScaleInfo {
   const pmmY = h / (w >= h ? hm : wm);
   const pmm = (pmmX + pmmY) / 2;
   return { pmm, pps: pmm * 25, ppv: pmm * 10, pmmX, pmmY };
+}
+
+// Try to extract scale from calibration pulses (rectangular 1mV pulses at end of traces)
+function computeScaleFromCalibration(P: Polyline[], _vp: { width: number; height: number }): ScaleInfo | null {
+  // Look for small black drawings with exactly 6 line segments (calibration pulse shape)
+  const calCandidates = P.filter(p =>
+    p.col[0] < 0.15 && p.col[1] < 0.15 && p.col[2] < 0.15 &&
+    p.pts.length >= 4 && p.pts.length <= 10
+  );
+
+  for (const cal of calCandidates) {
+    const ys = cal.pts.map(p => p.y);
+    const dy = Math.max(...ys) - Math.min(...ys);
+    const xs = cal.pts.map(p => p.x);
+    const dx = Math.max(...xs) - Math.min(...xs);
+    // Calibration pulse: tall and narrow (height >> width), height = 1mV = 10mm
+    if (dy > 20 && dy < 200 && dx < dy * 1.5 && dx > 5) {
+      const ppv = dy; // points per mV
+      const pmmY = ppv / 10;
+      const pmmX = pmmY; // assume isotropic
+      const pmm = (pmmX + pmmY) / 2;
+      return { pmm, pps: pmm * 25, ppv, pmmX, pmmY };
+    }
+  }
+  return null;
 }
 
 function toPhysical(pts: Point[], sc: ScaleInfo, lay: Layout): { samples: number[]; dur: number } {
