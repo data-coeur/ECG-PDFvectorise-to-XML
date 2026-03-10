@@ -14,6 +14,15 @@ export default {
       boxShadow: {
         glass: '0 8px 32px rgba(0, 0, 0, 0.08)',
       },
+      keyframes: {
+        'ecg-scroll': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+      },
+      animation: {
+        'ecg-scroll': 'ecg-scroll 4s linear infinite',
+      },
     },
   },
   plugins: [],
