@@ -6,9 +6,10 @@ const FORMAT_INFO: Record<string, FormatInfo> = {
   dicom: { label: 'DICOM', badge: 'med', badgeText: 'Médical', desc: 'DICOM Waveform — Format standard hospitalier pour l\'imagerie et les signaux médicaux. Compatible PACS.' },
   hdf5: { label: 'HDF5', badge: 'std', badgeText: 'Scientifique', desc: 'Hierarchical Data Format v5 — Format binaire haute performance. Utilisé par la NASA, le CERN, et en deep learning.' },
   webp: { label: 'WebP 4K', badge: 'img', badgeText: 'Image', desc: 'Image 4K (3840x2160) avec grille ECG standard, pulse de calibration 1mV/200ms et labels.' },
+  hl7aecg: { label: 'HL7 aECG', badge: 'med', badgeText: 'FDA/HL7', desc: 'HL7 Annotated ECG (aECG) XML — Format FDA pour la soumission réglementaire. Compatible avec les systèmes HL7 v3.' },
 };
 
-const ORDER = ['edf', 'wfdb_hea', 'dicom', 'hdf5', 'webp'];
+const ORDER = ['edf', 'wfdb_hea', 'dicom', 'hl7aecg', 'hdf5', 'webp'];
 
 interface Props { response: ServerResponse; dataUrl: string }
 

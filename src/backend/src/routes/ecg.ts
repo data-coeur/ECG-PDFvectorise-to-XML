@@ -6,6 +6,7 @@ import { writeWFDB } from '../writers/wfdb.js';
 import { writeDICOM } from '../writers/dicom.js';
 import { writeHDF5 } from '../writers/hdf5.js';
 import { writeWebP } from '../writers/webp.js';
+import { writeHL7aECG } from '../writers/hl7aecg.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/app/data';
 
@@ -93,6 +94,10 @@ ecgRouter.post('/receive', async (req, res) => {
     // 5. WebP
     await writeWebP(channels, data, path.join(DATA_DIR, `${base}.webp`));
     files.webp = `${base}.webp`;
+
+    // 6. HL7 aECG XML
+    writeHL7aECG(channels, resampled, samplesPerCh, sampleRate, maxDur, path.join(DATA_DIR, `${base}.xml`), data);
+    files.hl7aecg = `${base}.xml`;
 
     res.json({
       success: true,
