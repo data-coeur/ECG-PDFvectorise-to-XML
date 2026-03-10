@@ -71,6 +71,18 @@ const translations = {
     'info.convert.text': 'Le signal extrait peut être converti en 6 formats : EDF+ (standard ouvert), WFDB (PhysioNet), DICOM (hospitalier), HDF5 (scientifique), WebP (image 4K), HL7 aECG (FDA). La conversion est effectuée côté serveur.',
     'info.privacy.title': 'Confidentialité',
     'info.privacy.text': 'Seul le signal numérique brut est envoyé au serveur pour conversion. Les données patient (nom, date de naissance, identifiants) contenues dans le PDF ne sont jamais extraites ni transmises.',
+
+    // Header buttons
+    'btn.home': 'Accueil',
+    'btn.devMode': 'Mode développeur',
+
+    // Dev mode
+    'dev.pdfSource': 'Source PDF',
+    'dev.extractedSignals': 'Signaux extraits',
+    'dev.details': 'Détails d\'extraction',
+    'dev.channelDetails': 'Détails par canal',
+    'dev.samples': 'échantillons',
+    'dev.pageDimensions': 'Dimensions page',
   },
   en: {
     // Header
@@ -144,6 +156,18 @@ const translations = {
     'info.convert.text': 'The extracted signal can be converted into 6 formats: EDF+ (open standard), WFDB (PhysioNet), DICOM (hospital), HDF5 (scientific), WebP (4K image), HL7 aECG (FDA). Conversion is performed server-side.',
     'info.privacy.title': 'Privacy',
     'info.privacy.text': 'Only the raw digital signal is sent to the server for conversion. Patient data (name, date of birth, identifiers) contained in the PDF is never extracted or transmitted.',
+
+    // Header buttons
+    'btn.home': 'Home',
+    'btn.devMode': 'Developer mode',
+
+    // Dev mode
+    'dev.pdfSource': 'PDF Source',
+    'dev.extractedSignals': 'Extracted Signals',
+    'dev.details': 'Extraction Details',
+    'dev.channelDetails': 'Channel Details',
+    'dev.samples': 'samples',
+    'dev.pageDimensions': 'Page Dimensions',
   },
 } as const;
 

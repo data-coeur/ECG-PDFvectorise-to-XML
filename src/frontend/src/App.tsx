@@ -11,13 +11,16 @@ import ECGChannels from './components/ECGChannels';
 import FormatCards from './components/FormatCards';
 import JsonViewer from './components/JsonViewer';
 import InfoCard from './components/InfoCard';
+import DevModeView from './components/DevModeView';
 
 export default function App() {
   const { t } = useLanguage();
   const [ecgData, setEcgData] = useState<ECGData | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [status, setStatus] = useState({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
   const [converting, setConverting] = useState(false);
   const [hasDownload, setHasDownload] = useState(false);
+  const [devMode, setDevMode] = useState(false);
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
     if (hasDownload) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
@@ -34,8 +37,10 @@ export default function App() {
     }
     setStatus({ msg: t('status.extracting'), type: '', loading: true });
     setEcgData(null);
+    setPdfFile(file);
     setConverting(false);
     setHasDownload(false);
+    setDevMode(false);
     try {
       const result = await extractFromPdf(file);
       if (!result || !result.channels.length) {
@@ -48,6 +53,15 @@ export default function App() {
       setStatus({ msg: (e as Error).message, type: 'err', loading: false });
     }
   }, [t]);
+
+  const handleReset = useCallback(() => {
+    setEcgData(null);
+    setPdfFile(null);
+    setStatus({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
+    setConverting(false);
+    setHasDownload(false);
+    setDevMode(false);
+  }, []);
 
   const handleDownloadJson = useCallback(() => {
     if (!ecgData) return;
@@ -71,55 +85,88 @@ export default function App() {
             </h1>
             <p className="text-xs text-slate-400">{t('app.subtitle')}</p>
           </div>
-          <LanguageToggle />
+          <div className="flex items-center gap-2">
+            {ecgData && (
+              <>
+                <button
+                  onClick={handleReset}
+                  className="rounded-full bg-white/50 p-2 text-slate-500 backdrop-blur-sm transition-all hover:bg-white/80 hover:text-primary"
+                  title={t('btn.home')}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setDevMode(d => !d)}
+                  className={`rounded-full p-2 backdrop-blur-sm transition-all ${
+                    devMode ? 'bg-primary text-white' : 'bg-white/50 text-slate-500 hover:bg-white/80 hover:text-primary'
+                  }`}
+                  title={t('btn.devMode')}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6" />
+                    <polyline points="8 6 2 12 8 18" />
+                  </svg>
+                </button>
+              </>
+            )}
+            <LanguageToggle />
+          </div>
         </div>
       </header>
 
       {/* Main */}
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        <StepIndicator current={currentStep} completed={completedSteps} />
+      <main className={`mx-auto px-4 py-6 ${devMode ? 'max-w-7xl' : 'max-w-5xl'}`}>
+        {!devMode && <StepIndicator current={currentStep} completed={completedSteps} />}
 
-        {/* Input section */}
-        <div className="glass-card p-5 mt-2">
-          <DropZone onFile={handleFile} disabled={status.loading} />
+        {/* Input section — hidden in dev mode */}
+        {!devMode && (
+          <div className="glass-card p-5 mt-2">
+            <DropZone onFile={handleFile} disabled={status.loading} />
 
-          <div className="mt-3 flex items-center gap-3">
-            <StatusBar message={status.msg} type={status.type} loading={status.loading} />
-            {ecgData && (
-              <button
-                className="shrink-0 rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
-                onClick={handleDownloadJson}
-              >
-                ↓ {t('btn.json')}
-              </button>
-            )}
+            <div className="mt-3 flex items-center gap-3">
+              <StatusBar message={status.msg} type={status.type} loading={status.loading} />
+              {ecgData && (
+                <button
+                  className="shrink-0 rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
+                  onClick={handleDownloadJson}
+                >
+                  ↓ {t('btn.json')}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Info card — visible before extraction */}
-        {!ecgData && !status.loading && (
+        {!ecgData && !status.loading && !devMode && (
           <div className="mt-5">
             <InfoCard />
           </div>
         )}
 
-        {/* Format conversion cards */}
-        {ecgData && (
-          <div className="mt-5">
-            <FormatCards ecgData={ecgData} disabled={status.loading} onConvertStart={() => setConverting(true)} onConvertDone={() => setHasDownload(true)} />
-          </div>
+        {/* Normal view: format cards + signals */}
+        {ecgData && !devMode && (
+          <>
+            <div className="mt-5">
+              <FormatCards ecgData={ecgData} disabled={status.loading} onConvertStart={() => setConverting(true)} onConvertDone={() => setHasDownload(true)} />
+            </div>
+            <div className="mt-5 glass-card p-5">
+              <h2 className="mb-4 text-sm font-semibold text-slate-600">{t('results.title')}</h2>
+              <MetadataGrid data={ecgData} />
+              <div className="mt-4">
+                <ECGChannels channels={ecgData.channels} />
+              </div>
+              <JsonViewer data={ecgData} />
+            </div>
+          </>
         )}
 
-        {/* Extracted signals */}
-        {ecgData && (
-          <div className="mt-5 glass-card p-5">
-            <h2 className="mb-4 text-sm font-semibold text-slate-600">{t('results.title')}</h2>
-            <MetadataGrid data={ecgData} />
-            <div className="mt-4">
-              <ECGChannels channels={ecgData.channels} />
-            </div>
-            <JsonViewer data={ecgData} />
-          </div>
+        {/* Dev mode view */}
+        {ecgData && devMode && pdfFile && (
+          <DevModeView ecgData={ecgData} file={pdfFile} />
         )}
       </main>
     </div>
