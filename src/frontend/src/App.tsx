@@ -21,6 +21,7 @@ export default function App() {
   const [converting, setConverting] = useState(false);
   const [hasDownload, setHasDownload] = useState(false);
   const [devMode, setDevMode] = useState(false);
+  const [showRawJson, setShowRawJson] = useState(false);
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
     if (hasDownload) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
@@ -41,6 +42,7 @@ export default function App() {
     setConverting(false);
     setHasDownload(false);
     setDevMode(false);
+    setShowRawJson(false);
     try {
       const result = await extractFromPdf(file);
       if (!result || !result.channels.length) {
@@ -61,6 +63,7 @@ export default function App() {
     setConverting(false);
     setHasDownload(false);
     setDevMode(false);
+    setShowRawJson(false);
   }, []);
 
   const handleDownloadJson = useCallback(() => {
@@ -129,12 +132,24 @@ export default function App() {
             <div className="mt-3 flex items-center gap-3">
               <StatusBar message={status.msg} type={status.type} loading={status.loading} />
               {ecgData && (
-                <button
-                  className="shrink-0 rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
-                  onClick={handleDownloadJson}
-                >
-                  ↓ {t('btn.json')}
-                </button>
+                <div className="ml-auto flex shrink-0 gap-2">
+                  <button
+                    className="rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
+                    onClick={handleDownloadJson}
+                  >
+                    ↓ {t('btn.json')}
+                  </button>
+                  <button
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                      showRawJson
+                        ? 'border-primary/40 bg-primary/10 text-primary'
+                        : 'border-slate-200 bg-white/60 text-slate-600 hover:border-primary/40 hover:text-primary'
+                    }`}
+                    onClick={() => setShowRawJson(v => !v)}
+                  >
+                    { showRawJson ? '✕' : '{ }' } {t('btn.rawJson')}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -159,7 +174,7 @@ export default function App() {
               <div className="mt-4">
                 <ECGChannels channels={ecgData.channels} />
               </div>
-              <JsonViewer data={ecgData} />
+              {showRawJson && <JsonViewer data={ecgData} />}
             </div>
           </>
         )}
