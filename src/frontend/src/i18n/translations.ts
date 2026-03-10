@@ -1,13 +1,13 @@
 const translations = {
   fr: {
     // Header
-    'app.title': 'ECG PDF → Signal Numérique',
-    'app.subtitle': 'Extraction vectorielle · Schiller, GE MUSE, Philips et autres',
+    'app.title': 'Extracteur ECG',
+    'app.subtitle': 'Extraction du signal & conversion en formats standards',
 
     // Steps
     'step.upload': 'Upload',
     'step.extract': 'Extraction',
-
+    'step.send': 'Envoi',
     'step.download': 'Téléchargement',
 
     // DropZone
@@ -59,16 +59,28 @@ const translations = {
     'dl.badge.scientific': 'Scientifique',
     'dl.badge.image': 'Image',
     'dl.badge.fda': 'FDA/HL7',
+
+    // Info card
+    'info.principle.title': 'Principe',
+    'info.principle.text': 'Cet outil extrait le signal électrique depuis un ECG au format PDF vectorisé, puis le convertit en formats numériques standards. L\'extraction est réalisée directement dans votre navigateur — aucune donnée patient n\'est extraite ni transmise.',
+    'info.upload.title': 'Upload',
+    'info.upload.text': 'Déposez un PDF ECG vectorisé (non scanné). Les principaux fabricants sont supportés : Schiller, GE MUSE, Philips, Mortara/Burdick, et autres. Le fichier est lu localement par votre navigateur.',
+    'info.extract.title': 'Extraction',
+    'info.extract.text': 'Le signal est extrait en analysant les tracés vectoriels (chemins SVG) contenus dans le PDF. Les 12 dérivations standard sont identifiées automatiquement avec leur calibration (gain, vitesse).',
+    'info.convert.title': 'Conversion',
+    'info.convert.text': 'Le signal extrait peut être converti en 6 formats : EDF+ (standard ouvert), WFDB (PhysioNet), DICOM (hospitalier), HDF5 (scientifique), WebP (image 4K), HL7 aECG (FDA). La conversion est effectuée côté serveur.',
+    'info.privacy.title': 'Confidentialité',
+    'info.privacy.text': 'Seul le signal numérique brut est envoyé au serveur pour conversion. Les données patient (nom, date de naissance, identifiants) contenues dans le PDF ne sont jamais extraites ni transmises.',
   },
   en: {
     // Header
-    'app.title': 'ECG PDF → Digital Signal',
-    'app.subtitle': 'Vector extraction · Schiller, GE MUSE, Philips and others',
+    'app.title': 'ECG Extractor',
+    'app.subtitle': 'Signal extraction & standard format conversion',
 
     // Steps
     'step.upload': 'Upload',
     'step.extract': 'Extract',
-
+    'step.send': 'Send',
     'step.download': 'Download',
 
     // DropZone
@@ -120,6 +132,18 @@ const translations = {
     'dl.badge.scientific': 'Scientific',
     'dl.badge.image': 'Image',
     'dl.badge.fda': 'FDA/HL7',
+
+    // Info card
+    'info.principle.title': 'Principle',
+    'info.principle.text': 'This tool extracts the electrical signal from a vectorized PDF ECG, then converts it into standard digital formats. Extraction runs entirely in your browser — no patient data is extracted or transmitted.',
+    'info.upload.title': 'Upload',
+    'info.upload.text': 'Drop a vectorized (not scanned) ECG PDF. Major manufacturers are supported: Schiller, GE MUSE, Philips, Mortara/Burdick, and others. The file is read locally by your browser.',
+    'info.extract.title': 'Extraction',
+    'info.extract.text': 'The signal is extracted by analyzing vector paths (SVG paths) embedded in the PDF. All 12 standard leads are automatically identified along with their calibration (gain, speed).',
+    'info.convert.title': 'Conversion',
+    'info.convert.text': 'The extracted signal can be converted into 6 formats: EDF+ (open standard), WFDB (PhysioNet), DICOM (hospital), HDF5 (scientific), WebP (4K image), HL7 aECG (FDA). Conversion is performed server-side.',
+    'info.privacy.title': 'Privacy',
+    'info.privacy.text': 'Only the raw digital signal is sent to the server for conversion. Patient data (name, date of birth, identifiers) contained in the PDF is never extracted or transmitted.',
   },
 } as const;
 

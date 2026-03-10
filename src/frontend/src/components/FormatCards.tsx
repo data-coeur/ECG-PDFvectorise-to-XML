@@ -35,15 +35,18 @@ const DATA_URL = '/api/ecg/data/';
 interface Props {
   ecgData: ECGData;
   disabled?: boolean;
+  onConvertStart?: () => void;
+  onConvertDone?: () => void;
 }
 
-export default function FormatCards({ ecgData, disabled }: Props) {
+export default function FormatCards({ ecgData, disabled, onConvertStart, onConvertDone }: Props) {
   const { t } = useLanguage();
   const [states, setStates] = useState<Record<string, CardState>>({});
   const [results, setResults] = useState<Record<string, ServerResponse>>({});
 
   const handleConvert = useCallback(async (fmt: FmtDef) => {
     setStates(s => ({ ...s, [fmt.key]: 'loading' }));
+    onConvertStart?.();
     try {
       const r = await fetch(API_URL + fmt.apiFormat, {
         method: 'POST',
@@ -55,10 +58,11 @@ export default function FormatCards({ ecgData, disabled }: Props) {
       if (!j.success) throw new Error(j.error || 'Server error');
       setResults(s => ({ ...s, [fmt.key]: j }));
       setStates(s => ({ ...s, [fmt.key]: 'done' }));
+      onConvertDone?.();
     } catch {
       setStates(s => ({ ...s, [fmt.key]: 'error' }));
     }
-  }, [ecgData]);
+  }, [ecgData, onConvertStart, onConvertDone]);
 
   return (
     <div className="glass-card p-5">

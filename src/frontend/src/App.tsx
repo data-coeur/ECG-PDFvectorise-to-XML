@@ -10,17 +10,22 @@ import MetadataGrid from './components/MetadataGrid';
 import ECGChannels from './components/ECGChannels';
 import FormatCards from './components/FormatCards';
 import JsonViewer from './components/JsonViewer';
+import InfoCard from './components/InfoCard';
 
 export default function App() {
   const { t } = useLanguage();
   const [ecgData, setEcgData] = useState<ECGData | null>(null);
   const [status, setStatus] = useState({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
+  const [converting, setConverting] = useState(false);
+  const [hasDownload, setHasDownload] = useState(false);
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
-    if (ecgData && !status.loading) return { currentStep: 'download', completedSteps: ['upload', 'extract'] };
+    if (hasDownload) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
+    if (converting) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
+    if (ecgData && !status.loading) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
     if (status.loading) return { currentStep: 'extract', completedSteps: ['upload'] };
     return { currentStep: 'upload', completedSteps: [] };
-  }, [ecgData, status.loading]);
+  }, [ecgData, status.loading, converting, hasDownload]);
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
@@ -29,6 +34,8 @@ export default function App() {
     }
     setStatus({ msg: t('status.extracting'), type: '', loading: true });
     setEcgData(null);
+    setConverting(false);
+    setHasDownload(false);
     try {
       const result = await extractFromPdf(file);
       if (!result || !result.channels.length) {
@@ -56,8 +63,11 @@ export default function App() {
       <header className="sticky top-0 z-50 border-b border-white/30 bg-white/70 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">
-              <span className="text-primary">⚡</span> {t('app.title')}
+            <h1 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <svg className="w-6 h-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="2,12 6,12 8,4 11,20 14,8 16,16 18,12 22,12" />
+              </svg>
+              {t('app.title')}
             </h1>
             <p className="text-xs text-slate-400">{t('app.subtitle')}</p>
           </div>
@@ -86,10 +96,17 @@ export default function App() {
           </div>
         </div>
 
+        {/* Info card — visible before extraction */}
+        {!ecgData && !status.loading && (
+          <div className="mt-5">
+            <InfoCard />
+          </div>
+        )}
+
         {/* Format conversion cards */}
         {ecgData && (
           <div className="mt-5">
-            <FormatCards ecgData={ecgData} disabled={status.loading} />
+            <FormatCards ecgData={ecgData} disabled={status.loading} onConvertStart={() => setConverting(true)} onConvertDone={() => setHasDownload(true)} />
           </div>
         )}
 

@@ -1,15 +1,16 @@
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 
-export type Step = 'upload' | 'extract' | 'download';
+export type Step = 'upload' | 'extract' | 'send' | 'download';
 
 const STEPS: { key: Step; labelKey: TranslationKey }[] = [
   { key: 'upload', labelKey: 'step.upload' },
   { key: 'extract', labelKey: 'step.extract' },
+  { key: 'send', labelKey: 'step.send' },
   { key: 'download', labelKey: 'step.download' },
 ];
 
-const ORDER: Record<Step, number> = { upload: 0, extract: 1, download: 2 };
+const ORDER: Record<Step, number> = { upload: 0, extract: 1, send: 2, download: 3 };
 
 interface Props {
   current: Step;
@@ -27,9 +28,9 @@ export default function StepIndicator({ current, completed }: Props) {
         const active = s.key === current;
         const past = ORDER[s.key] < currentIdx;
         return (
-          <div key={s.key} className="flex items-center">
+          <div key={s.key} className="flex items-start">
             {i > 0 && (
-              <div className={`h-0.5 w-8 sm:w-12 transition-colors ${done || past ? 'bg-primary' : 'bg-slate-200'}`} />
+              <div className={`h-0.5 w-8 sm:w-12 mt-[15px] transition-colors ${done || past ? 'bg-primary' : 'bg-slate-200'}`} />
             )}
             <div className="flex flex-col items-center gap-1">
               <div
