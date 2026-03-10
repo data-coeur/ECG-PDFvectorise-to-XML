@@ -7,7 +7,7 @@ const translations = {
     // Steps
     'step.upload': 'Upload',
     'step.extract': 'Extraction',
-    'step.send': 'Envoi',
+
     'step.download': 'Téléchargement',
 
     // DropZone
@@ -38,6 +38,13 @@ const translations = {
     // Results
     'results.title': 'Signaux extraits',
 
+    // Format cards
+    'fmt.title': 'Convertir et télécharger',
+    'fmt.convert': 'Convertir',
+    'fmt.converting': 'Conversion...',
+    'fmt.download': 'Télécharger',
+    'fmt.error': 'Erreur',
+
     // Downloads
     'dl.title': 'Fichiers générés — cliquez pour télécharger',
     'dl.edf.desc': 'European Data Format — Standard ouvert pour les signaux physiologiques. Lisible par EDFbrowser, Polyman, MATLAB, Python (pyedflib).',
@@ -61,7 +68,7 @@ const translations = {
     // Steps
     'step.upload': 'Upload',
     'step.extract': 'Extract',
-    'step.send': 'Send',
+
     'step.download': 'Download',
 
     // DropZone
@@ -91,6 +98,13 @@ const translations = {
 
     // Results
     'results.title': 'Extracted signals',
+
+    // Format cards
+    'fmt.title': 'Convert & download',
+    'fmt.convert': 'Convert',
+    'fmt.converting': 'Converting...',
+    'fmt.download': 'Download',
+    'fmt.error': 'Error',
 
     // Downloads
     'dl.title': 'Generated files — click to download',

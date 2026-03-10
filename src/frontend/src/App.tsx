@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { ECGData, ServerResponse } from './lib/types';
+import type { ECGData } from './lib/types';
 import { extractFromPdf } from './lib/ecg-extract';
 import { useLanguage } from './i18n';
 import LanguageToggle from './components/LanguageToggle';
@@ -8,25 +8,19 @@ import DropZone from './components/DropZone';
 import StatusBar from './components/StatusBar';
 import MetadataGrid from './components/MetadataGrid';
 import ECGChannels from './components/ECGChannels';
-import DownloadArea from './components/DownloadArea';
+import FormatCards from './components/FormatCards';
 import JsonViewer from './components/JsonViewer';
-
-const API_URL = '/api/ecg/receive';
-const DATA_URL = '/api/ecg/data/';
 
 export default function App() {
   const { t } = useLanguage();
   const [ecgData, setEcgData] = useState<ECGData | null>(null);
-  const [serverResp, setServerResp] = useState<ServerResponse | null>(null);
   const [status, setStatus] = useState({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
-    if (serverResp?.files) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
-    if (status.loading && ecgData) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
-    if (ecgData) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
+    if (ecgData && !status.loading) return { currentStep: 'download', completedSteps: ['upload', 'extract'] };
     if (status.loading) return { currentStep: 'extract', completedSteps: ['upload'] };
     return { currentStep: 'upload', completedSteps: [] };
-  }, [ecgData, serverResp, status.loading]);
+  }, [ecgData, status.loading]);
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
@@ -35,7 +29,6 @@ export default function App() {
     }
     setStatus({ msg: t('status.extracting'), type: '', loading: true });
     setEcgData(null);
-    setServerResp(null);
     try {
       const result = await extractFromPdf(file);
       if (!result || !result.channels.length) {
@@ -48,29 +41,6 @@ export default function App() {
       setStatus({ msg: (e as Error).message, type: 'err', loading: false });
     }
   }, [t]);
-
-  const handleSend = useCallback(async () => {
-    if (!ecgData) return;
-    setStatus({ msg: t('status.sending'), type: '', loading: true });
-    setServerResp(null);
-    try {
-      const r = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ecgData),
-      });
-      if (!r.ok) { setStatus({ msg: `${t('status.error')} ${r.status} ${r.statusText}`, type: 'err', loading: false }); return; }
-      const j: ServerResponse = await r.json();
-      if (!j.success) { setStatus({ msg: j.error || t('status.serverError'), type: 'err', loading: false }); return; }
-      setServerResp(j);
-      setStatus({
-        msg: `${Object.keys(j.files!).length} ${t('status.formats')} · ${j.info!.channels} ${t('status.channels')} · ${j.info!.sample_rate} Hz · ${j.info!.duration}s`,
-        type: 'ok', loading: false,
-      });
-    } catch (e) {
-      setStatus({ msg: (e as Error).message, type: 'err', loading: false });
-    }
-  }, [ecgData, t]);
 
   const handleDownloadJson = useCallback(() => {
     if (!ecgData) return;
@@ -103,32 +73,23 @@ export default function App() {
         <div className="glass-card p-5 mt-2">
           <DropZone onFile={handleFile} disabled={status.loading} />
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-primary-dark hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
-              disabled={!ecgData || status.loading}
-              onClick={handleSend}
-            >
-              ↗ {t('btn.send')}
-            </button>
-            <button
-              className="rounded-xl border border-slate-200 bg-white/60 px-5 py-2.5 text-sm font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-              disabled={!ecgData}
-              onClick={handleDownloadJson}
-            >
-              ↓ {t('btn.json')}
-            </button>
-          </div>
-
-          <div className="mt-3">
+          <div className="mt-3 flex items-center gap-3">
             <StatusBar message={status.msg} type={status.type} loading={status.loading} />
+            {ecgData && (
+              <button
+                className="shrink-0 rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
+                onClick={handleDownloadJson}
+              >
+                ↓ {t('btn.json')}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Downloads */}
-        {serverResp?.files && (
+        {/* Format conversion cards */}
+        {ecgData && (
           <div className="mt-5">
-            <DownloadArea response={serverResp} dataUrl={DATA_URL} />
+            <FormatCards ecgData={ecgData} disabled={status.loading} />
           </div>
         )}
 

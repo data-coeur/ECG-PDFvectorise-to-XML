@@ -26,78 +26,121 @@ ecgRouter.use('/data', (req, res, next) => {
   res.download(filePath);
 });
 
-// Receive ECG data and convert to multiple formats
-ecgRouter.post('/receive', async (req, res) => {
+interface Channel {
+  name: string;
+  samples: number[];
+  duration_s: number;
+  sample_rate_hz: number;
+}
+
+type FormatKey = 'edf' | 'wfdb' | 'dicom' | 'hdf5' | 'webp' | 'hl7aecg';
+
+const VALID_FORMATS: FormatKey[] = ['edf', 'wfdb', 'dicom', 'hdf5', 'webp', 'hl7aecg'];
+
+function resample(channels: Channel[]) {
+  let maxDur = 0;
+  for (const ch of channels) maxDur = Math.max(maxDur, ch.duration_s || 0);
+  if (maxDur <= 0) maxDur = 10;
+
+  let srcRate = 0;
+  for (const ch of channels) {
+    const r = ch.sample_rate_hz || 0;
+    if (r > srcRate) srcRate = r;
+  }
+  const sampleRate = srcRate > 0 ? srcRate : 500;
+  const samplesPerCh = Math.round(sampleRate * maxDur);
+
+  const resampled: number[][] = [];
+  for (const ch of channels) {
+    const src = ch.samples;
+    const n = src.length;
+    const out: number[] = [];
+    for (let i = 0; i < samplesPerCh; i++) {
+      const srcIdx = n > 1 ? i / (samplesPerCh - 1) * (n - 1) : 0;
+      const lo = Math.floor(srcIdx);
+      const hi = Math.min(lo + 1, n - 1);
+      const frac = srcIdx - lo;
+      out.push(src[lo] * (1 - frac) + src[hi] * frac);
+    }
+    resampled.push(out);
+  }
+
+  return { resampled, sampleRate, samplesPerCh, maxDur };
+}
+
+function makeBase(mfr: string) {
+  const safe = (mfr || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const ts = new Date().toISOString().replace(/[-:T]/g, '_').replace(/\.\d+Z/, '');
+  return `ecg_${safe}_${ts}`;
+}
+
+function convertFormat(
+  format: FormatKey,
+  channels: Channel[],
+  resampled: number[][],
+  samplesPerCh: number,
+  sampleRate: number,
+  maxDur: number,
+  base: string,
+  data: Record<string, unknown>,
+): Record<string, string> {
+  const files: Record<string, string> = {};
+  const p = (ext: string) => path.join(DATA_DIR, `${base}.${ext}`);
+
+  switch (format) {
+    case 'edf':
+      writeEDF(channels, resampled, samplesPerCh, sampleRate, maxDur, p('edf'));
+      files.edf = `${base}.edf`;
+      break;
+    case 'wfdb':
+      writeWFDB(channels, resampled, samplesPerCh, sampleRate, path.join(DATA_DIR, base));
+      files.wfdb_hea = `${base}.hea`;
+      files.wfdb_dat = `${base}.dat`;
+      break;
+    case 'dicom':
+      writeDICOM(channels, resampled, samplesPerCh, sampleRate, p('dcm'));
+      files.dicom = `${base}.dcm`;
+      break;
+    case 'hdf5':
+      writeHDF5(channels, resampled, samplesPerCh, sampleRate, maxDur, p('h5'), data);
+      files.hdf5 = `${base}.h5`;
+      break;
+    case 'webp':
+      break; // handled async in caller
+    case 'hl7aecg':
+      writeHL7aECG(channels, resampled, samplesPerCh, sampleRate, maxDur, p('xml'), data);
+      files.hl7aecg = `${base}.xml`;
+      break;
+  }
+  return files;
+}
+
+// Convert single format
+ecgRouter.post('/convert/:format', async (req, res) => {
   try {
+    const format = req.params.format as FormatKey;
+    if (!VALID_FORMATS.includes(format)) {
+      return res.status(400).json({ error: `Invalid format: ${format}. Valid: ${VALID_FORMATS.join(', ')}` });
+    }
+
     const data = req.body;
     if (!data?.channels?.length) return res.status(400).json({ error: 'No channels' });
 
     const channels: Channel[] = data.channels;
-    const numCh = channels.length;
-    const mfr = (data.manufacturer || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const ts = new Date().toISOString().replace(/[-:T]/g, '_').replace(/\.\d+Z/, '');
-    const base = `ecg_${mfr}_${ts}`;
+    const base = makeBase(data.manufacturer);
 
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-    // Save raw JSON
-    fs.writeFileSync(path.join(DATA_DIR, `${base}.json`), JSON.stringify(data, null, 2));
+    const { resampled, sampleRate, samplesPerCh, maxDur } = resample(channels);
 
-    // Compute max duration and sample rate
-    let maxDur = 0;
-    for (const ch of channels) maxDur = Math.max(maxDur, ch.duration_s || 0);
-    if (maxDur <= 0) maxDur = 10;
+    let files: Record<string, string>;
 
-    let srcRate = 0;
-    for (const ch of channels) {
-      const r = ch.sample_rate_hz || 0;
-      if (r > srcRate) srcRate = r;
+    if (format === 'webp') {
+      await writeWebP(channels, data, path.join(DATA_DIR, `${base}.webp`));
+      files = { webp: `${base}.webp` };
+    } else {
+      files = convertFormat(format, channels, resampled, samplesPerCh, sampleRate, maxDur, base, data);
     }
-    const sampleRate = srcRate > 0 ? srcRate : 500;
-    const samplesPerCh = Math.round(sampleRate * maxDur);
-
-    // Resample all channels to uniform rate
-    const resampled: number[][] = [];
-    for (const ch of channels) {
-      const src = ch.samples;
-      const n = src.length;
-      const out: number[] = [];
-      for (let i = 0; i < samplesPerCh; i++) {
-        const srcIdx = n > 1 ? i / (samplesPerCh - 1) * (n - 1) : 0;
-        const lo = Math.floor(srcIdx);
-        const hi = Math.min(lo + 1, n - 1);
-        const frac = srcIdx - lo;
-        out.push(src[lo] * (1 - frac) + src[hi] * frac);
-      }
-      resampled.push(out);
-    }
-
-    const files: Record<string, string> = {};
-
-    // 1. EDF+
-    writeEDF(channels, resampled, samplesPerCh, sampleRate, maxDur, path.join(DATA_DIR, `${base}.edf`));
-    files.edf = `${base}.edf`;
-
-    // 2. WFDB
-    writeWFDB(channels, resampled, samplesPerCh, sampleRate, path.join(DATA_DIR, base));
-    files.wfdb_hea = `${base}.hea`;
-    files.wfdb_dat = `${base}.dat`;
-
-    // 3. DICOM
-    writeDICOM(channels, resampled, samplesPerCh, sampleRate, path.join(DATA_DIR, `${base}.dcm`));
-    files.dicom = `${base}.dcm`;
-
-    // 4. HDF5
-    writeHDF5(channels, resampled, samplesPerCh, sampleRate, maxDur, path.join(DATA_DIR, `${base}.h5`), data);
-    files.hdf5 = `${base}.h5`;
-
-    // 5. WebP
-    await writeWebP(channels, data, path.join(DATA_DIR, `${base}.webp`));
-    files.webp = `${base}.webp`;
-
-    // 6. HL7 aECG XML
-    writeHL7aECG(channels, resampled, samplesPerCh, sampleRate, maxDur, path.join(DATA_DIR, `${base}.xml`), data);
-    files.hl7aecg = `${base}.xml`;
 
     res.json({
       success: true,
@@ -106,7 +149,50 @@ ecgRouter.post('/receive', async (req, res) => {
       info: {
         manufacturer: data.manufacturer || '?',
         layout: data.layout || 'stacked_12x1',
-        channels: numCh,
+        channels: channels.length,
+        sample_rate: sampleRate,
+        duration: Math.round(maxDur * 100) / 100,
+      },
+    });
+  } catch (e) {
+    console.error('ECG convert error:', e);
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// Legacy: receive and convert all formats at once
+ecgRouter.post('/receive', async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data?.channels?.length) return res.status(400).json({ error: 'No channels' });
+
+    const channels: Channel[] = data.channels;
+    const base = makeBase(data.manufacturer);
+
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+    fs.writeFileSync(path.join(DATA_DIR, `${base}.json`), JSON.stringify(data, null, 2));
+
+    const { resampled, sampleRate, samplesPerCh, maxDur } = resample(channels);
+
+    const files: Record<string, string> = {};
+    for (const fmt of VALID_FORMATS) {
+      if (fmt === 'webp') {
+        await writeWebP(channels, data, path.join(DATA_DIR, `${base}.webp`));
+        files.webp = `${base}.webp`;
+      } else {
+        Object.assign(files, convertFormat(fmt, channels, resampled, samplesPerCh, sampleRate, maxDur, base, data));
+      }
+    }
+
+    res.json({
+      success: true,
+      base,
+      files,
+      info: {
+        manufacturer: data.manufacturer || '?',
+        layout: data.layout || 'stacked_12x1',
+        channels: channels.length,
         sample_rate: sampleRate,
         duration: Math.round(maxDur * 100) / 100,
       },
@@ -116,10 +202,3 @@ ecgRouter.post('/receive', async (req, res) => {
     res.status(500).json({ error: (e as Error).message });
   }
 });
-
-interface Channel {
-  name: string;
-  samples: number[];
-  duration_s: number;
-  sample_rate_hz: number;
-}

@@ -1,16 +1,15 @@
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 
-export type Step = 'upload' | 'extract' | 'send' | 'download';
+export type Step = 'upload' | 'extract' | 'download';
 
 const STEPS: { key: Step; labelKey: TranslationKey }[] = [
   { key: 'upload', labelKey: 'step.upload' },
   { key: 'extract', labelKey: 'step.extract' },
-  { key: 'send', labelKey: 'step.send' },
   { key: 'download', labelKey: 'step.download' },
 ];
 
-const ORDER: Record<Step, number> = { upload: 0, extract: 1, send: 2, download: 3 };
+const ORDER: Record<Step, number> = { upload: 0, extract: 1, download: 2 };
 
 interface Props {
   current: Step;
