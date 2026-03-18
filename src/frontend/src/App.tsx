@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { ECGData } from './lib/types';
 import { extractFromPdf } from './lib/ecg-extract';
+import { parseXmlViaBackend } from './lib/xml-extract';
 import { useLanguage } from './i18n';
 import type { TranslationKey } from './i18n';
 import LanguageToggle from './components/LanguageToggle';
@@ -19,6 +20,7 @@ export default function App() {
   const { t } = useLanguage();
   const [ecgData, setEcgData] = useState<ECGData | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [xmlContent, setXmlContent] = useState<string | null>(null);
   const [status, setStatus] = useState({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
   const [converting, setConverting] = useState(false);
   const [hasDownload, setHasDownload] = useState(false);
@@ -34,19 +36,29 @@ export default function App() {
   }, [ecgData, status.loading, converting, hasDownload]);
 
   const handleFile = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setStatus({ msg: t('status.nonPdf'), type: 'err', loading: false });
+    const isXml = /\.xml$/i.test(file.name);
+    const isPdf = /\.pdf$/i.test(file.name);
+    if (!isPdf && !isXml) {
+      setStatus({ msg: t('status.unsupported'), type: 'err', loading: false });
       return;
     }
     setStatus({ msg: t('status.extracting'), type: '', loading: true });
     setEcgData(null);
-    setPdfFile(file);
+    setPdfFile(isPdf ? file : null);
+    setXmlContent(null);
     setConverting(false);
     setHasDownload(false);
     setDevMode(false);
     setShowRawJson(false);
     try {
-      const result = await extractFromPdf(file);
+      let result: ECGData | null;
+      if (isXml) {
+        const text = await file.text();
+        setXmlContent(text);
+        result = await parseXmlViaBackend(file);
+      } else {
+        result = await extractFromPdf(file);
+      }
       if (!result || !result.channels.length) {
         setStatus({ msg: t('status.noSignal'), type: 'err', loading: false });
         return;
@@ -62,6 +74,7 @@ export default function App() {
   const handleReset = useCallback(() => {
     setEcgData(null);
     setPdfFile(null);
+    setXmlContent(null);
     setStatus({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
     setConverting(false);
     setHasDownload(false);
@@ -172,7 +185,7 @@ export default function App() {
               <FormatCards ecgData={ecgData} disabled={status.loading} onConvertStart={() => setConverting(true)} onConvertDone={() => setHasDownload(true)} />
             </div>
             <div className="mt-5">
-              <AnonymizeCard pdfFile={pdfFile} disabled={status.loading} />
+              <AnonymizeCard pdfFile={pdfFile} xmlContent={xmlContent} disabled={status.loading} />
             </div>
             <div className="mt-5 glass-card p-5">
               <h2 className="mb-4 text-sm font-semibold text-slate-600">{t('results.title')}</h2>

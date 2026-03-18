@@ -17,8 +17,9 @@ RUN npm run build
 # Stage 3: Production runtime
 FROM node:18-alpine
 
-# Install fonts for sharp SVG rendering
-RUN apk add --no-cache fontconfig font-dejavu
+# Install fonts for sharp SVG rendering + Python for ecg-datakit XML parsing
+RUN apk add --no-cache fontconfig font-dejavu python3 py3-pip py3-numpy py3-scipy \
+    && pip3 install --no-cache-dir --break-system-packages ecgdatakit
 
 WORKDIR /app
 
@@ -26,6 +27,9 @@ WORKDIR /app
 COPY --from=backend-builder /build/dist ./dist
 COPY --from=backend-builder /build/node_modules ./node_modules
 COPY --from=backend-builder /build/package.json ./
+
+# Copy Python scripts
+COPY src/backend/scripts ./scripts
 
 # Copy frontend build
 COPY --from=frontend-builder /build/dist ./frontend-dist

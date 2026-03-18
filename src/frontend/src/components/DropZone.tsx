@@ -12,7 +12,7 @@ export default function DropZone({ onFile, disabled }: Props) {
   const { t } = useLanguage();
 
   const handleFile = useCallback((f: File) => {
-    if (!f.name.toLowerCase().endsWith('.pdf')) return;
+    if (!/\.(pdf|xml)$/i.test(f.name)) return;
     onFile(f);
   }, [onFile]);
 
@@ -61,7 +61,7 @@ export default function DropZone({ onFile, disabled }: Props) {
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.PDF"
+        accept=".pdf,.PDF,.xml,.XML"
         className="hidden"
         onChange={e => e.target.files?.length && handleFile(e.target.files[0])}
       />

@@ -11,8 +11,8 @@ const translations = {
     'step.download': 'Téléchargement',
 
     // DropZone
-    'drop.label': 'Glissez un PDF ECG ici ou cliquez',
-    'drop.sub': 'PDF vectorisé de n\'importe quel fabricant ECG',
+    'drop.label': 'Glissez un fichier ECG ici ou cliquez',
+    'drop.sub': 'PDF vectorisé ou XML propriétaire (Philips, MUSE, HL7, Mortara)',
 
     // Buttons
     'btn.send': 'Envoyer au serveur',
@@ -22,6 +22,7 @@ const translations = {
     // Status
     'status.extracting': 'Extraction...',
     'status.nonPdf': 'Fichier non-PDF',
+    'status.unsupported': 'Format non supporté (PDF ou XML attendu)',
     'status.noSignal': 'Aucun signal ECG vectoriel',
     'status.sending': 'Envoi et conversion...',
     'status.error': 'Erreur',
@@ -83,8 +84,9 @@ const translations = {
 
     // Anonymization
     'anon.title': 'Anonymisation PDF',
+    'anon.title.xml': 'Anonymisation XML',
     'anon.smart.label': 'Retirer données patient',
-    'anon.smart.desc': 'Supprime les données personnelles (nom, date de naissance, identifiants) situées en dehors de la grille ECG. Les labels de dérivations, mesures et infos ECG sont conservés.',
+    'anon.smart.desc': 'Supprime les données personnelles (nom, date de naissance, identifiants). Les dérivations, mesures et infos ECG sont conservés.',
     'anon.smart.action': 'Anonymiser',
     'anon.smart.done': 'Données patient retirées',
     'anon.badge.smart': 'Vie privée',
@@ -118,8 +120,8 @@ const translations = {
     'step.download': 'Download',
 
     // DropZone
-    'drop.label': 'Drop an ECG PDF here or click',
-    'drop.sub': 'Vectorized PDF from any ECG manufacturer',
+    'drop.label': 'Drop an ECG file here or click',
+    'drop.sub': 'Vectorized PDF or proprietary XML (Philips, MUSE, HL7, Mortara)',
 
     // Buttons
     'btn.send': 'Send to server',
@@ -129,6 +131,7 @@ const translations = {
     // Status
     'status.extracting': 'Extracting...',
     'status.nonPdf': 'Not a PDF file',
+    'status.unsupported': 'Unsupported format (PDF or XML expected)',
     'status.noSignal': 'No vectorized ECG signal found',
     'status.sending': 'Sending & converting...',
     'status.error': 'Error',
@@ -190,8 +193,9 @@ const translations = {
 
     // Anonymization
     'anon.title': 'PDF Anonymization',
+    'anon.title.xml': 'XML Anonymization',
     'anon.smart.label': 'Remove patient data',
-    'anon.smart.desc': 'Removes personal data (name, date of birth, identifiers) located outside the ECG grid area. Lead labels, measurements and ECG info are preserved.',
+    'anon.smart.desc': 'Removes personal data (name, date of birth, identifiers). Lead labels, measurements and ECG info are preserved.',
     'anon.smart.action': 'Anonymize',
     'anon.smart.done': 'Patient data removed',
     'anon.badge.smart': 'Privacy',

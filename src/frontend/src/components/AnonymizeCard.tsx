@@ -2,11 +2,13 @@ import { useState, useCallback } from 'react';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import { anonymizePdf, extractTextFromPdf, type AnonMode } from '../lib/pdf-anonymize';
+import { anonymizeXml } from '../lib/xml-anonymize';
 
 type CardState = 'idle' | 'loading' | 'done' | 'error';
 
 interface Props {
   pdfFile: File | null;
+  xmlContent: string | null;
   disabled?: boolean;
 }
 
@@ -32,7 +34,9 @@ const CheckIcon = () => (
   </svg>
 );
 
-export default function AnonymizeCard({ pdfFile, disabled }: Props) {
+export default function AnonymizeCard({ pdfFile, xmlContent, disabled }: Props) {
+  const isXml = !!xmlContent;
+  const isReady = !!pdfFile || !!xmlContent;
   const { t } = useLanguage();
   const [state, setState] = useState<CardState>('idle');
   const [activeMode, setActiveMode] = useState<AnonMode | null>(null);
@@ -43,47 +47,66 @@ export default function AnonymizeCard({ pdfFile, disabled }: Props) {
   const [verified, setVerified] = useState(false);
 
   const handleAnonymize = useCallback(async (mode: AnonMode) => {
-    if (!pdfFile) return;
+    if (!isReady) return;
     setState('loading');
     setActiveMode(mode);
     setError('');
     setVerified(false);
 
     try {
-      const originalBuf = await pdfFile.arrayBuffer() as ArrayBuffer;
-      const bufForText = originalBuf.slice(0);
-      const bufForAnon = originalBuf.slice(0);
+      if (isXml && xmlContent) {
+        // XML anonymization — 100% local
+        const result = anonymizeXml(xmlContent, mode);
+        setRemovedCount(0);
+        const blob = new Blob([result], { type: 'application/xml' });
+        const baseName = (pdfFile?.name ?? 'ecg').replace(/\.xml$/i, '');
+        const suffix = mode === 'full' ? '_stripped' : '_anonymized';
+        setResultBlob(blob);
+        setResultName(`${baseName}${suffix}.xml`);
+        setVerified(mode === 'full');
+        setState('done');
+      } else if (pdfFile) {
+        // PDF anonymization
+        const originalBuf = await pdfFile.arrayBuffer() as ArrayBuffer;
+        const bufForText = originalBuf.slice(0);
+        const bufForAnon = originalBuf.slice(0);
 
-      const textBefore = await extractTextFromPdf(bufForText);
-      const beforeCount = textBefore.length;
+        const textBefore = await extractTextFromPdf(bufForText);
+        const beforeCount = textBefore.length;
 
-      const anonBytes = await anonymizePdf(bufForAnon, mode);
+        const anonBytes = await anonymizePdf(bufForAnon, mode);
 
-      const anonBuf = new ArrayBuffer(anonBytes.byteLength);
-      new Uint8Array(anonBuf).set(anonBytes);
+        const anonBuf = new ArrayBuffer(anonBytes.byteLength);
+        new Uint8Array(anonBuf).set(anonBytes);
 
-      if (mode === 'full') {
-        const textAfter = await extractTextFromPdf(anonBuf.slice(0));
-        if (textAfter.length > 0) {
-          setState('error');
-          setError(`Verification failed: ${textAfter.length} text items remaining`);
-          return;
+        if (mode === 'full') {
+          const LEAD_LABELS = new Set([
+            'I','II','III','aVR','aVL','aVF','AVR','AVL','AVF',
+            'D1','D2','D3','DI','DII','DIII','V1','V2','V3','V4','V5','V6',
+          ]);
+          const textAfter = await extractTextFromPdf(anonBuf.slice(0));
+          const nonLeadItems = textAfter.filter(t => !LEAD_LABELS.has(t.trim()));
+          if (nonLeadItems.length > 0) {
+            setState('error');
+            setError(`Verification failed: ${nonLeadItems.length} non-lead text items remaining`);
+            return;
+          }
+          setVerified(true);
         }
-        setVerified(true);
-      }
 
-      setRemovedCount(beforeCount);
-      const blob = new Blob([anonBuf], { type: 'application/pdf' });
-      const baseName = pdfFile.name.replace(/\.pdf$/i, '');
-      const suffix = mode === 'full' ? '_stripped' : '_anonymized';
-      setResultBlob(blob);
-      setResultName(`${baseName}${suffix}.pdf`);
-      setState('done');
+        setRemovedCount(beforeCount);
+        const blob = new Blob([anonBuf], { type: 'application/pdf' });
+        const baseName = pdfFile.name.replace(/\.pdf$/i, '');
+        const suffix = mode === 'full' ? '_stripped' : '_anonymized';
+        setResultBlob(blob);
+        setResultName(`${baseName}${suffix}.pdf`);
+        setState('done');
+      }
     } catch (e) {
       setState('error');
       setError((e as Error).message);
     }
-  }, [pdfFile]);
+  }, [pdfFile, xmlContent, isXml, isReady]);
 
   const handleDownload = useCallback(() => {
     if (!resultBlob || !resultName) return;
@@ -159,7 +182,7 @@ export default function AnonymizeCard({ pdfFile, disabled }: Props) {
           {cardState === 'idle' && (
             <button
               onClick={() => handleAnonymize(mode)}
-              disabled={disabled || !pdfFile || state === 'loading'}
+              disabled={disabled || !isReady || state === 'loading'}
               className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                 isSmart
                   ? 'bg-violet-100 text-violet-700 hover:bg-violet-600 hover:text-white'
@@ -211,7 +234,7 @@ export default function AnonymizeCard({ pdfFile, disabled }: Props) {
 
   return (
     <div className="glass-card p-5">
-      <h3 className="mb-4 text-sm font-semibold text-slate-600">{t('anon.title')}</h3>
+      <h3 className="mb-4 text-sm font-semibold text-slate-600">{t(isXml ? 'anon.title.xml' as TranslationKey : 'anon.title')}</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {renderCard('smart')}
         {renderCard('full')}
