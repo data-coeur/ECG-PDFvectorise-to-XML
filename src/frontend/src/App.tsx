@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import type { ECGData } from './lib/types';
 import { extractFromPdf } from './lib/ecg-extract';
 import { useLanguage } from './i18n';
+import type { TranslationKey } from './i18n';
 import LanguageToggle from './components/LanguageToggle';
 import StepIndicator, { type Step } from './components/StepIndicator';
 import DropZone from './components/DropZone';
@@ -9,6 +10,7 @@ import StatusBar from './components/StatusBar';
 import MetadataGrid from './components/MetadataGrid';
 import ECGChannels from './components/ECGChannels';
 import FormatCards from './components/FormatCards';
+import AnonymizeCard from './components/AnonymizeCard';
 import JsonViewer from './components/JsonViewer';
 import InfoCard from './components/InfoCard';
 import DevModeView from './components/DevModeView';
@@ -50,7 +52,8 @@ export default function App() {
         return;
       }
       setEcgData(result);
-      setStatus({ msg: `${result.channels.length} ${t('status.channels')} · ${result.manufacturer} · ${result.layout}`, type: 'ok', loading: false });
+      const layoutLabel = t(`layout.${result.layout}` as TranslationKey) || result.layout;
+      setStatus({ msg: `${result.channels.length} ${t('status.channels')} · ${result.manufacturer} · ${layoutLabel}`, type: 'ok', loading: false });
     } catch (e) {
       setStatus({ msg: (e as Error).message, type: 'err', loading: false });
     }
@@ -167,6 +170,9 @@ export default function App() {
           <>
             <div className="mt-5">
               <FormatCards ecgData={ecgData} disabled={status.loading} onConvertStart={() => setConverting(true)} onConvertDone={() => setHasDownload(true)} />
+            </div>
+            <div className="mt-5">
+              <AnonymizeCard pdfFile={pdfFile} disabled={status.loading} />
             </div>
             <div className="mt-5 glass-card p-5">
               <h2 className="mb-4 text-sm font-semibold text-slate-600">{t('results.title')}</h2>

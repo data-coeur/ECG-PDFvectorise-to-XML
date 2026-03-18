@@ -23,5 +23,10 @@ Thumbs.db
 # ECG extracted data (generated)
 src/data/
 
+# Test ECG files (patient data — never commit)
+data_test/
+src/ecg_data/
+src/frontend/public/
+
 # DeepECG git (submodule-like)
 deepecg/.git/

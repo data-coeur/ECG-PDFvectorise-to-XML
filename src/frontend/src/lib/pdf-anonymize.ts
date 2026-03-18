@@ -1,0 +1,684 @@
+/**
+ * Client-side PDF anonymization — two modes:
+ *
+ * 1. "full"  — Strip all text EXCEPT lead labels (D1, aVF, V1…)
+ * 2. "smart" — Strip only patient data (name, ID, birth date, sex),
+ *              keep ECG info (measurements, settings, diagnoses, labels)
+ *
+ * Handles both plain-text PDFs (Schiller, Mortara) and encoded-font PDFs
+ * (GE MUSE) via automatic detection + pdfjs fallback.
+ *
+ * Both modes also strip metadata, annotations, and XMP.
+ */
+
+import {
+  PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream, PDFRef,
+  StandardFonts, rgb,
+} from 'pdf-lib';
+import pako from 'pako';
+
+export type AnonMode = 'full' | 'smart';
+
+/* ------------------------------------------------------------------ */
+/*  Low-level helpers                                                  */
+/* ------------------------------------------------------------------ */
+
+function isWS(c: string) { return c === ' ' || c === '\n' || c === '\r' || c === '\t'; }
+
+function bytesToStr(raw: Uint8Array): string {
+  const chunks: string[] = [];
+  for (let i = 0; i < raw.length; i += 8192)
+    chunks.push(String.fromCharCode(...raw.subarray(i, i + 8192)));
+  return chunks.join('');
+}
+
+function strToBytes(text: string): Uint8Array {
+  const buf = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) buf[i] = text.charCodeAt(i);
+  return buf;
+}
+
+/* ------------------------------------------------------------------ */
+/*  BT / ET detection                                                  */
+/* ------------------------------------------------------------------ */
+
+function isBT(s: string, i: number, len: number): boolean {
+  if (s[i] !== 'B' || s[i + 1] !== 'T') return false;
+  if (i > 0 && !isWS(s[i - 1])) return false;
+  if (i + 2 < len && !isWS(s[i + 2])) return false;
+  return true;
+}
+
+function findET(s: string, start: number, len: number): number {
+  let i = start;
+  while (i < len) {
+    if (s[i] === '(') {
+      let d = 1; i++;
+      while (i < len && d > 0) {
+        if (s[i] === '\\') { i += 2; continue; }
+        if (s[i] === '(') d++;
+        if (s[i] === ')') d--;
+        i++;
+      }
+      continue;
+    }
+    if (s[i] === 'E' && s[i + 1] === 'T') {
+      const b = i > 0 ? s[i - 1] : ' ';
+      const a = i + 2 < len ? s[i + 2] : ' ';
+      if (isWS(b) && (i + 2 >= len || isWS(a))) {
+        i += 2;
+        while (i < len && isWS(s[i])) i++;
+        return i;
+      }
+    }
+    i++;
+  }
+  return len;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Find all BT…ET blocks in a stream                                  */
+/* ------------------------------------------------------------------ */
+
+interface BTBlock { start: number; end: number; body: string }
+
+function findBTBlocks(stream: string): BTBlock[] {
+  const blocks: BTBlock[] = [];
+  let i = 0;
+  const len = stream.length;
+  while (i < len) {
+    if (stream[i] === '(') {
+      let d = 1; i++;
+      while (i < len && d > 0) {
+        if (stream[i] === '\\') { i += 2; continue; }
+        if (stream[i] === '(') d++;
+        if (stream[i] === ')') d--;
+        i++;
+      }
+      continue;
+    }
+    if (isBT(stream, i, len)) {
+      const start = i;
+      const end = findET(stream, i + 2, len);
+      const body = stream.slice(i + 3, end);
+      blocks.push({ start, end, body });
+      i = end;
+      continue;
+    }
+    i++;
+  }
+  return blocks;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Extract text content from a BT…ET block (raw stream bytes)         */
+/* ------------------------------------------------------------------ */
+
+/** Decode PDF string escape sequences: \nnn (octal), \n, \r, \t, \\, \(, \) */
+function decodePdfString(raw: string): string {
+  return raw.replace(/\\([0-7]{1,3}|[nrtbf\\()\/])/g, (_, esc: string) => {
+    if (esc === 'n') return '\n';
+    if (esc === 'r') return '\r';
+    if (esc === 't') return '\t';
+    if (esc === 'b') return '\b';
+    if (esc === 'f') return '\f';
+    if (esc === '\\' || esc === '(' || esc === ')' || esc === '/') return esc;
+    // Octal
+    return String.fromCharCode(parseInt(esc, 8));
+  });
+}
+
+function extractTjText(body: string): string {
+  const parts: string[] = [];
+  // Match (string) Tj — handles escaped parens like \( and \)
+  const tjRe = /\(((?:[^()\\]|\\.)*)\)\s*Tj/g;
+  let m;
+  while ((m = tjRe.exec(body)) !== null) parts.push(decodePdfString(m[1]));
+  // Match <hex> Tj — decode hex pairs to chars
+  const hexRe = /<([0-9a-fA-F]+)>\s*Tj/g;
+  while ((m = hexRe.exec(body)) !== null) {
+    const hex = m[1];
+    let decoded = '';
+    for (let i = 0; i < hex.length; i += 2) {
+      decoded += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+    }
+    parts.push(decoded);
+  }
+  // Match [...] TJ (array form)
+  const tjArrRe = /\[([^\]]*)\]\s*TJ/gi;
+  while ((m = tjArrRe.exec(body)) !== null) {
+    const inner = m[1];
+    const strRe = /\(((?:[^()\\]|\\.)*)\)/g;
+    let sm;
+    while ((sm = strRe.exec(inner)) !== null) parts.push(decodePdfString(sm[1]));
+    const hRe = /<([0-9a-fA-F]+)>/g;
+    while ((sm = hRe.exec(inner)) !== null) {
+      const hex = sm[1];
+      let decoded = '';
+      for (let i = 0; i < hex.length; i += 2)
+        decoded += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+      parts.push(decoded);
+    }
+  }
+  return parts.join(' ').trim();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Lead label patterns — kept in both modes                           */
+/* ------------------------------------------------------------------ */
+
+const LEAD_LABELS = new Set([
+  'I', 'II', 'III', 'aVR', 'aVL', 'aVF',
+  'AVR', 'AVL', 'AVF', 'avr', 'avl', 'avf',
+  'D1', 'D2', 'D3', 'DI', 'DII', 'DIII',
+  'V1', 'V2', 'V3', 'V4', 'V5', 'V6',
+]);
+
+function isLeadLabel(text: string): boolean {
+  return LEAD_LABELS.has(text.trim());
+}
+
+/* ------------------------------------------------------------------ */
+/*  ECG info patterns (for smart mode — always kept)                   */
+/* ------------------------------------------------------------------ */
+
+const ECG_INFO_PATTERNS: RegExp[] = [
+  // Lead labels (also caught by isLeadLabel, but kept here for completeness)
+  /^(I{1,3}|aV[RLF]|AVR|AVL|AVF|D[123I]{1,3}|V[1-6])$/,
+  // Units — no \b required (handles "25mm/s", "10mm/mV", "40Hz")
+  /(mm\/s|mm\/mV)/i,
+  /Hz/i,
+  /bpm/i,
+  /\bms\b/i,
+  // Measurement labels (case-insensitive for "Axes P-R-T")
+  /\b(FC|HR|PR|QRS|QRSD|QT|QTc[BF]?|RR|Axes?)\b/i,
+  // Measurement sub-labels
+  /(Fr[ée]q|Intervalle|Dur[ée]e|Vent)/i,
+  // Gain/speed/filter labels (no trailing \b — handles "Périphérique" etc.)
+  /(Vit\b|Speed|Gain|P[ée]r[ií]ph|Pr[ée]c|Filter|Filtre)/i,
+  // Calibration
+  /(calibr|1\s*mV)/i,
+  // Diagnosis text — no trailing \b (handles "Bradycardie", "Rythme", etc.)
+  /(sinusal|sinus|tachycard|bradycard|fibrillat|flutter|block|bloc|branche|infarct|isch[ée]mi|hypertro|rythm|rhythm|segment|onde|wave|normal|anormal|abnormal|interval|d[ée]riv|d[ée]viation|axial|gauche|droit|complet|incomplet|ant[ée]rieur|post[ée]rieur|lat[ée]ral|ind[ée]termin|BBG|BBD|BAV|ESV|WPW|LVH|RVH|STEMI|NSTEMI)/i,
+  // More diagnosis phrases (no trailing \b)
+  /(aucun\s+ECG|pr[ée]c[ée]dent|disponible|repolarisation|conduction|extrasystol|big[ée]min|trig[ée]min|sous[\s-]?d[ée]cal|sus[\s-]?d[ée]cal|allongement|raccourcissement|microvoltage|alternance)/i,
+  // ECG label
+  /\bECG\b/i,
+  // Page info
+  /(Page|page)\s+\d/,
+  // Derivation info
+  /d[ée]rivation/i,
+  // Software/algorithm version (e.g. "10.1.3", "12SL", "241")
+  /^\d+\.\d+\.\d+$/,
+  /\d+SL/,
+  /IDC:/,
+  // Pure numbers (measurement values like "85", "156", "450/535", "-60")
+  /^-?\d{1,4}$/,
+  // Fraction values (like "450/535")
+  /^\d{1,4}\/\d{1,4}$/,
+  // Short uppercase codes (like "P?", "CL")
+  /^[A-Z]{1,4}\s*\??$/,
+  // Diagnosis status
+  /(Unconfirmed|Confirmed|Diagnosis|Interpr[ée]tation|Rapport|Report)/i,
+  // Degree symbol (axis values like "30 °")
+  /°/,
+  // Sequential/standard layout labels
+  /(S[ée]quentiel|Sequential|Standard|Simultan[ée]|Simultaneous)/i,
+  // Filter descriptions (e.g. "FPB 40 Hz,SBS,SSF, AC 50Hz")
+  /\b(FPB|FPH|SBS|SSF)\b/,
+  // Device model/version strings (e.g. "MS-2007::SCM 310::3.10")
+  /^[A-Z]{2,}[\u2010\u2011\u2012\u2013-]\d/i,
+  // Position standard
+  /position\s+standard/i,
+];
+
+function isEcgInfo(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (isLeadLabel(t)) return true;
+  return ECG_INFO_PATTERNS.some(re => re.test(t));
+}
+
+/* ------------------------------------------------------------------ */
+/*  Classify text: should it be kept?                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Classify text for direct stream editing (readable fonts).
+ * Whitelist approach: only keep what we recognize as ECG info.
+ * Unknown text is REMOVED to ensure no patient data leaks through.
+ */
+function shouldKeepTextDirect(text: string, mode: AnonMode): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (mode === 'full') return isLeadLabel(t);
+  // Smart mode: whitelist — only keep recognized ECG info
+  if (isLeadLabel(t)) return true;
+  if (isEcgInfo(t)) return true;
+  return false; // safe default — remove anything not recognized as ECG info
+}
+
+/**
+ * Classify text for pdfjs fallback (encoded fonts like MUSE).
+ * Aggressive: unknown text is REMOVED (only keep what we recognize as ECG info).
+ * This ensures patient values (names, room numbers, dates) don't slip through.
+ */
+function shouldKeepTextPdfjs(text: string, mode: AnonMode): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (mode === 'full') return isLeadLabel(t);
+  if (isLeadLabel(t)) return true;
+  if (isEcgInfo(t)) return true;
+  return false; // aggressive — remove anything not recognized as ECG info
+}
+
+/* ------------------------------------------------------------------ */
+/*  Detect if raw stream text is readable (plain fonts)                */
+/* ------------------------------------------------------------------ */
+
+function isRawTextReadable(doc: PDFDocument): boolean {
+  // Extract raw text from all BT blocks on first page and check if
+  // any recognized lead labels are found
+  const page = doc.getPages()[0];
+  if (!page) return false;
+  const node = page.node;
+  const contents = node.get(PDFName.of('Contents'));
+  if (!contents) return false;
+
+  const checkStream = (ref: PDFRef): boolean => {
+    const stream = doc.context.lookup(ref);
+    if (!(stream instanceof PDFRawStream)) return false;
+    const f = stream.dict.get(PDFName.of('Filter'));
+    const filter = f ? f.toString() : null;
+    let data: Uint8Array;
+    try { data = filter === '/FlateDecode' ? pako.inflate(stream.contents) : stream.contents; }
+    catch { return false; }
+    const text = bytesToStr(data);
+    const blocks = findBTBlocks(text);
+    for (const block of blocks) {
+      const t = extractTjText(block.body).trim();
+      if (LEAD_LABELS.has(t)) return true;
+    }
+    return false;
+  };
+
+  if (contents instanceof PDFRef) {
+    if (checkStream(contents)) return true;
+  } else if (contents instanceof PDFArray) {
+    for (let i = 0; i < contents.size(); i++) {
+      const ref = contents.get(i);
+      if (ref instanceof PDFRef && checkStream(ref)) return true;
+    }
+  }
+
+  // Also check Form XObjects
+  const resources = resolveDict(node.get(PDFName.of('Resources')), doc);
+  if (resources) {
+    const xObjRef = resources.get(PDFName.of('XObject'));
+    const xObjDict = xObjRef instanceof PDFRef
+      ? doc.context.lookup(xObjRef) as PDFDict
+      : xObjRef instanceof PDFDict ? xObjRef : null;
+    if (xObjDict) {
+      for (const [, ref] of xObjDict.entries()) {
+        if (ref instanceof PDFRef && checkStream(ref)) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  PATH A: Direct stream editing (for readable fonts)                 */
+/* ------------------------------------------------------------------ */
+
+function processStreamDirect(stream: string, mode: AnonMode): string {
+  const blocks = findBTBlocks(stream);
+  let result = stream;
+  for (let j = blocks.length - 1; j >= 0; j--) {
+    const block = blocks[j];
+    const text = extractTjText(block.body);
+    if (!shouldKeepTextDirect(text, mode)) {
+      result = result.slice(0, block.start) + result.slice(block.end);
+    }
+  }
+  return result;
+}
+
+function replaceStreamDirect(oldStream: PDFRawStream, mode: AnonMode): void {
+  const f = oldStream.dict.get(PDFName.of('Filter'));
+  const filter = f ? f.toString() : null;
+  let data: Uint8Array;
+  try { data = filter === '/FlateDecode' ? pako.inflate(oldStream.contents) : oldStream.contents; }
+  catch { return; }
+  const text = bytesToStr(data);
+  const cleaned = processStreamDirect(text, mode);
+  const cleanedBytes = strToBytes(cleaned);
+  const output = filter === '/FlateDecode' ? pako.deflate(cleanedBytes) : cleanedBytes;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (oldStream as any).contents = output;
+}
+
+function processDocDirect(doc: PDFDocument, mode: AnonMode): void {
+  for (const page of doc.getPages()) {
+    const node = page.node;
+    const contents = node.get(PDFName.of('Contents'));
+    if (!contents) continue;
+
+    if (contents instanceof PDFRef) {
+      const stream = doc.context.lookup(contents);
+      if (stream instanceof PDFRawStream) replaceStreamDirect(stream, mode);
+    } else if (contents instanceof PDFArray) {
+      for (let i = 0; i < contents.size(); i++) {
+        const ref = contents.get(i);
+        if (!(ref instanceof PDFRef)) continue;
+        const stream = doc.context.lookup(ref);
+        if (stream instanceof PDFRawStream) replaceStreamDirect(stream, mode);
+      }
+    }
+
+    const resources = resolveDict(node.get(PDFName.of('Resources')), doc);
+    if (resources) cleanXObjects(resources, doc, new Set(), mode);
+  }
+}
+
+function cleanXObjects(resources: PDFDict, doc: PDFDocument, visited: Set<string>, mode: AnonMode): void {
+  const xObjRef = resources.get(PDFName.of('XObject'));
+  if (!xObjRef) return;
+  const xObjDict = xObjRef instanceof PDFRef
+    ? doc.context.lookup(xObjRef) as PDFDict
+    : xObjRef instanceof PDFDict ? xObjRef : null;
+  if (!xObjDict) return;
+  for (const [, ref] of xObjDict.entries()) {
+    if (!(ref instanceof PDFRef)) continue;
+    const key = ref.toString();
+    if (visited.has(key)) continue;
+    visited.add(key);
+    const obj = doc.context.lookup(ref);
+    if (!(obj instanceof PDFRawStream)) continue;
+    const subtype = obj.dict.get(PDFName.of('Subtype'));
+    if (!subtype || subtype.toString() !== '/Form') continue;
+    replaceStreamDirect(obj, mode);
+    const subRes = obj.dict.get(PDFName.of('Resources'));
+    const resolved = subRes instanceof PDFRef ? doc.context.lookup(subRes) : subRes;
+    if (resolved instanceof PDFDict) cleanXObjects(resolved, doc, visited, mode);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  PATH B: pdfjs fallback (for encoded fonts like MUSE)               */
+/*  Strategy: strip ALL text, re-draw only kept items via pdf-lib      */
+/* ------------------------------------------------------------------ */
+
+interface TextItem {
+  text: string;
+  x: number;  // internal (unrotated) PDF coordinate
+  y: number;  // internal (unrotated) PDF coordinate
+  fontSize: number;
+}
+
+interface PageTextData {
+  items: TextItem[];
+}
+
+/**
+ * Extract text items from pdfjs, converting viewport coordinates back to
+ * internal (unrotated) PDF coordinates so pdf-lib drawText works correctly.
+ *
+ * pdfjs returns transforms in the rotated viewport space.
+ * pdf-lib drawText expects coordinates in the unrotated MediaBox space.
+ *
+ * Conversion for /Rotate 90:  internal_x = viewport_y,  internal_y = mediaBoxWidth - viewport_x
+ * Conversion for /Rotate 180: internal_x = mediaBoxWidth - viewport_x,  internal_y = mediaBoxHeight - viewport_y
+ * Conversion for /Rotate 270: internal_x = mediaBoxHeight - viewport_y,  internal_y = viewport_x
+ */
+async function extractTextItems(
+  fileBytes: ArrayBuffer,
+  doc: PDFDocument,
+): Promise<Map<number, PageTextData>> {
+  const pdfjsLib = await import('pdfjs-dist');
+  const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(fileBytes) }).promise;
+  const result = new Map<number, PageTextData>();
+
+  for (let p = 1; p <= pdfDoc.numPages; p++) {
+    const page = await pdfDoc.getPage(p);
+    const content = await page.getTextContent();
+
+    // Get page rotation and dimensions from pdf-lib (unrotated MediaBox)
+    const pdfLibPage = doc.getPage(p - 1);
+    const rotation = pdfLibPage.getRotation().angle; // 0, 90, 180, 270
+    const mbWidth = pdfLibPage.getWidth();   // MediaBox width (unrotated)
+    const mbHeight = pdfLibPage.getHeight(); // MediaBox height (unrotated)
+
+    const items: TextItem[] = [];
+    for (const item of content.items) {
+      if (!('str' in item) || !item.str.trim()) continue;
+
+      const t = item.transform;
+      // Font size from transform matrix magnitude (handles rotation)
+      const fontSize = Math.sqrt(t[0] * t[0] + t[1] * t[1]) || 8;
+      // Viewport coordinates
+      const vx = t[4];
+      const vy = t[5];
+
+      // Convert viewport → internal coordinates based on page rotation
+      let ix: number, iy: number;
+      switch (rotation) {
+        case 90:
+          ix = vy;
+          iy = mbWidth - vx;
+          break;
+        case 180:
+          ix = mbWidth - vx;
+          iy = mbHeight - vy;
+          break;
+        case 270:
+          ix = mbHeight - vy;
+          iy = vx;
+          break;
+        default: // 0
+          ix = vx;
+          iy = vy;
+          break;
+      }
+
+      items.push({ text: item.str.trim(), x: ix, y: iy, fontSize });
+    }
+    result.set(p - 1, { items });
+  }
+
+  return result;
+}
+
+function stripAllText(stream: string): string {
+  const blocks = findBTBlocks(stream);
+  let result = stream;
+  for (let j = blocks.length - 1; j >= 0; j--) {
+    result = result.slice(0, blocks[j].start) + result.slice(blocks[j].end);
+  }
+  return result;
+}
+
+function stripStreamText(oldStream: PDFRawStream): void {
+  const f = oldStream.dict.get(PDFName.of('Filter'));
+  const filter = f ? f.toString() : null;
+  let data: Uint8Array;
+  try { data = filter === '/FlateDecode' ? pako.inflate(oldStream.contents) : oldStream.contents; }
+  catch { return; }
+  const text = bytesToStr(data);
+  const cleaned = stripAllText(text);
+  const cleanedBytes = strToBytes(cleaned);
+  const output = filter === '/FlateDecode' ? pako.deflate(cleanedBytes) : cleanedBytes;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (oldStream as any).contents = output;
+}
+
+function stripAllXObjectText(resources: PDFDict, doc: PDFDocument, visited: Set<string>): void {
+  const xObjRef = resources.get(PDFName.of('XObject'));
+  if (!xObjRef) return;
+  const xObjDict = xObjRef instanceof PDFRef
+    ? doc.context.lookup(xObjRef) as PDFDict
+    : xObjRef instanceof PDFDict ? xObjRef : null;
+  if (!xObjDict) return;
+  for (const [, ref] of xObjDict.entries()) {
+    if (!(ref instanceof PDFRef)) continue;
+    const key = ref.toString();
+    if (visited.has(key)) continue;
+    visited.add(key);
+    const obj = doc.context.lookup(ref);
+    if (!(obj instanceof PDFRawStream)) continue;
+    const subtype = obj.dict.get(PDFName.of('Subtype'));
+    if (!subtype || subtype.toString() !== '/Form') continue;
+    stripStreamText(obj);
+    const subRes = obj.dict.get(PDFName.of('Resources'));
+    const resolved = subRes instanceof PDFRef ? doc.context.lookup(subRes) : subRes;
+    if (resolved instanceof PDFDict) stripAllXObjectText(resolved, doc, visited);
+  }
+}
+
+async function processDocPdfjs(doc: PDFDocument, fileBytes: ArrayBuffer, mode: AnonMode): Promise<void> {
+  // 1. Extract all text items with positions via pdfjs
+  console.log('[pdfjs-path] Extracting text items via pdfjs...');
+  const allItems = await extractTextItems(fileBytes, doc);
+  for (const [pageIdx, data] of allItems.entries()) {
+    const kept = data.items.filter(i => shouldKeepTextPdfjs(i.text, mode));
+    const removed = data.items.filter(i => !shouldKeepTextPdfjs(i.text, mode));
+    console.log(`[pdfjs-path] Page ${pageIdx}: ${data.items.length} items, keeping ${kept.length}, removing ${removed.length}`);
+    removed.forEach(i => console.log(`  ✗ REMOVE: "${i.text}"`));
+    kept.forEach(i => console.log(`  ✓ KEEP: "${i.text}" at (${i.x.toFixed(1)}, ${i.y.toFixed(1)}) size=${i.fontSize.toFixed(1)}`));
+  }
+
+  // 2. Strip ALL text from content streams and XObjects
+  console.log('[pdfjs-path] Stripping all text from streams...');
+  for (const page of doc.getPages()) {
+    const node = page.node;
+    const contents = node.get(PDFName.of('Contents'));
+    if (!contents) continue;
+    if (contents instanceof PDFRef) {
+      const stream = doc.context.lookup(contents);
+      if (stream instanceof PDFRawStream) stripStreamText(stream);
+    } else if (contents instanceof PDFArray) {
+      for (let i = 0; i < contents.size(); i++) {
+        const ref = contents.get(i);
+        if (ref instanceof PDFRef) {
+          const stream = doc.context.lookup(ref);
+          if (stream instanceof PDFRawStream) stripStreamText(stream);
+        }
+      }
+    }
+    const resources = resolveDict(node.get(PDFName.of('Resources')), doc);
+    if (resources) stripAllXObjectText(resources, doc, new Set());
+  }
+
+  // 3. Re-draw only kept text items using pdf-lib
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  for (let pageIdx = 0; pageIdx < doc.getPageCount(); pageIdx++) {
+    const page = doc.getPage(pageIdx);
+    const pageData = allItems.get(pageIdx);
+    const items = pageData ? pageData.items : [];
+    for (const item of items) {
+      if (!shouldKeepTextPdfjs(item.text, mode)) continue;
+      const isLead = isLeadLabel(item.text);
+      page.drawText(item.text, {
+        x: item.x,
+        y: item.y,
+        size: item.fontSize,
+        font: isLead ? fontBold : font,
+        color: rgb(0, 0, 0),
+      });
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function resolveDict(obj: unknown, doc: PDFDocument): PDFDict | null {
+  if (obj instanceof PDFDict) return obj;
+  if (obj instanceof PDFRef) {
+    const r = doc.context.lookup(obj);
+    return r instanceof PDFDict ? r : null;
+  }
+  return null;
+}
+
+function stripMetadata(doc: PDFDocument): void {
+  doc.setTitle(''); doc.setAuthor(''); doc.setSubject('');
+  doc.setKeywords([]); doc.setProducer(''); doc.setCreator('');
+  const infoRef = doc.context.trailerInfo.Info;
+  if (infoRef) {
+    const info = doc.context.lookup(infoRef);
+    if (info instanceof PDFDict) {
+      try { info.delete(PDFName.of('CreationDate')); } catch { /* ok */ }
+      try { info.delete(PDFName.of('ModDate')); } catch { /* ok */ }
+    }
+  }
+  const rootRef = doc.context.trailerInfo.Root;
+  if (rootRef) {
+    const catalog = doc.context.lookup(rootRef);
+    if (catalog instanceof PDFDict) {
+      try { catalog.delete(PDFName.of('Metadata')); } catch { /* ok */ }
+    }
+  }
+}
+
+function stripAnnotations(doc: PDFDocument): void {
+  for (const page of doc.getPages())
+    try { page.node.delete(PDFName.of('Annots')); } catch { /* ok */ }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main entry point                                                   */
+/* ------------------------------------------------------------------ */
+
+export async function anonymizePdf(
+  fileBytes: ArrayBuffer,
+  mode: AnonMode = 'full',
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(fileBytes, { ignoreEncryption: true });
+
+  stripMetadata(doc);
+  stripAnnotations(doc);
+
+  const readable = isRawTextReadable(doc);
+  console.log(`[anonymize] mode=${mode}, rawTextReadable=${readable}, pages=${doc.getPageCount()}`);
+
+  if (readable) {
+    // Path A: fonts are plain-text readable (Schiller, Mortara, etc.)
+    console.log('[anonymize] Using direct stream editing (Path A)');
+    processDocDirect(doc, mode);
+  } else {
+    // Path B: encoded fonts (GE MUSE, etc.) — use pdfjs to decode text
+    console.log('[anonymize] Using pdfjs fallback (Path B)');
+    await processDocPdfjs(doc, fileBytes.slice(0), mode);
+  }
+
+  const result = await doc.save();
+  console.log(`[anonymize] Done, output size: ${result.length} bytes`);
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Verification: extract remaining text via pdfjs-dist                */
+/* ------------------------------------------------------------------ */
+
+export async function extractTextFromPdf(fileBytes: ArrayBuffer): Promise<string[]> {
+  const pdfjsLib = await import('pdfjs-dist');
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(fileBytes) }).promise;
+  const texts: string[] = [];
+
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    for (const item of content.items) {
+      if ('str' in item && item.str.trim()) {
+        texts.push(item.str.trim());
+      }
+    }
+  }
+
+  return texts;
+}

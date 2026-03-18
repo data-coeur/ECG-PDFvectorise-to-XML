@@ -31,9 +31,14 @@ const translations = {
 
     // Metadata
     'meta.manufacturer': 'Fabricant',
-    'meta.layout': 'Layout',
+    'meta.layout': 'Disposition',
     'meta.channels': 'Canaux',
     'meta.scale': 'Échelle',
+
+    // Layout labels
+    'layout.grid_4x3': 'Grille 4×3',
+    'layout.sequential_6x2': 'Séquentiel 6×2',
+    'layout.stacked_12x1': 'Empilé 12×1',
 
     // Results
     'results.title': 'Signaux extraits',
@@ -75,6 +80,23 @@ const translations = {
     // Header buttons
     'btn.home': 'Accueil',
     'btn.devMode': 'Mode développeur',
+
+    // Anonymization
+    'anon.title': 'Anonymisation PDF',
+    'anon.smart.label': 'Retirer données patient',
+    'anon.smart.desc': 'Supprime les données personnelles (nom, date de naissance, identifiants) situées en dehors de la grille ECG. Les labels de dérivations, mesures et infos ECG sont conservés.',
+    'anon.smart.action': 'Anonymiser',
+    'anon.smart.done': 'Données patient retirées',
+    'anon.badge.smart': 'Vie privée',
+    'anon.full.label': 'Vider tout sauf la grille',
+    'anon.full.desc': 'Supprime tout le texte du PDF. Seuls la grille ECG et les tracés sont conservés. Anonymisation maximale garantie.',
+    'anon.full.action': 'Vider le texte',
+    'anon.badge.full': 'Nettoyage total',
+    'anon.processing': 'Anonymisation & vérification...',
+    'anon.download': 'Télécharger',
+    'anon.verified': 'Vérifié : 0 texte restant',
+    'anon.removed': 'éléments texte supprimés',
+    'anon.error': 'Erreur',
 
     // Dev mode
     'dev.pdfSource': 'Source PDF',
@@ -120,6 +142,11 @@ const translations = {
     'meta.channels': 'Channels',
     'meta.scale': 'Scale',
 
+    // Layout labels
+    'layout.grid_4x3': '4×3 Grid',
+    'layout.sequential_6x2': '6×2 Sequential',
+    'layout.stacked_12x1': '12×1 Stacked',
+
     // Results
     'results.title': 'Extracted signals',
 
@@ -160,6 +187,23 @@ const translations = {
     // Header buttons
     'btn.home': 'Home',
     'btn.devMode': 'Developer mode',
+
+    // Anonymization
+    'anon.title': 'PDF Anonymization',
+    'anon.smart.label': 'Remove patient data',
+    'anon.smart.desc': 'Removes personal data (name, date of birth, identifiers) located outside the ECG grid area. Lead labels, measurements and ECG info are preserved.',
+    'anon.smart.action': 'Anonymize',
+    'anon.smart.done': 'Patient data removed',
+    'anon.badge.smart': 'Privacy',
+    'anon.full.label': 'Strip all except grid',
+    'anon.full.desc': 'Removes all text from the PDF. Only the ECG grid and traces are kept. Maximum anonymization guaranteed.',
+    'anon.full.action': 'Strip text',
+    'anon.badge.full': 'Full strip',
+    'anon.processing': 'Anonymizing & verifying...',
+    'anon.download': 'Download',
+    'anon.verified': 'Verified: 0 text remaining',
+    'anon.removed': 'text items removed',
+    'anon.error': 'Error',
 
     // Dev mode
     'dev.pdfSource': 'PDF Source',
