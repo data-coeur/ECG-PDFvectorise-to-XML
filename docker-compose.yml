@@ -8,6 +8,8 @@ services:
     container_name: ecg-dev-web
     ports:
       - "${WEB_PORT}:3000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
     volumes:
       - ./src/data:/app/data
     depends_on:

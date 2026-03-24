@@ -39,12 +39,15 @@ async function extract(pg: PDFPageProxy, fn: string): Promise<ECGData | null> {
   const ap = parse(ops, vp);
 
   const lb: Label[] = [];
+  const seenLabels = new Set<string>();
   for (const it of tc.items) {
     if (!('str' in it)) continue;
     const t = it.str.trim();
     if (ALL_LEAD_TOKENS.includes(t)) {
-      const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
       const normalized = LEAD_ALIASES[t] || t;
+      if (seenLabels.has(normalized)) continue;
+      seenLabels.add(normalized);
+      const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
       lb.push({ text: normalized, x, y });
     }
   }
@@ -64,10 +67,16 @@ async function extract(pg: PDFPageProxy, fn: string): Promise<ECGData | null> {
     scale: { mm_per_s: 25, mm_per_mV: 10, pts_per_mm: Math.round(sc.pmm * 100) / 100 },
     channels: ch.map(c => {
       const s = toPhysical(c.pts, sc, lay);
+      let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
+      for (const p of c.pts) {
+        if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x;
+        if (p.y < by0) by0 = p.y; if (p.y > by1) by1 = p.y;
+      }
       return {
         name: c.name, samples: s.samples, duration_s: s.dur,
         sample_rate_hz: s.samples.length > 1 ? Math.round(s.samples.length / s.dur) : 0,
         voltage_unit: 'mV', time_unit: 's',
+        bbox: { x0: bx0, x1: bx1, y0: by0, y1: by1 },
       };
     }),
   };
@@ -242,10 +251,12 @@ function detectLayout(tr: Polyline[], vp: { width: number; height: number }): La
   const grp1 = tr.filter(t => t.bb!.cy < perpMid);
   const grp2 = tr.filter(t => t.bb!.cy >= perpMid);
 
+  // All traces span most of the page width → stacked vertically, not side by side
+  if (allWide) return { type: 'stacked_12x1', tA, vI };
+
   if (grp1.length >= 4 && grp2.length >= 4 && grp1.length <= 8 && grp2.length <= 8) {
     return { type: 'sequential_6x2', tA, vI };
   }
-  if (allWide) return { type: 'stacked_12x1', tA, vI };
   return { type: 'stacked_12x1', tA, vI };
 }
 
@@ -260,7 +271,11 @@ function clusterValues(sorted: number[], threshold: number): number[][] {
   return clusters;
 }
 
-function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: Point[] }[] {
+type AssignResult = { name: string; pts: Point[]; baselineY?: number };
+
+function assign(tr: Polyline[], lb: Label[], lay: Layout): AssignResult[] {
+  const vK = lay.tA === 'x' ? 'y' : 'x';
+
   if (lay.type === 'stacked_12x1') {
     const perpKey = lay.tA === 'x' ? 'cy' : 'cx';
     const labelSortKey = lay.tA === 'x' ? 'y' : 'x';
@@ -269,11 +284,12 @@ function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: 
     return s.map((t, i) => ({
       name: i < sl.length ? sl[i].text : i < LEAD_NAMES.length ? LEAD_NAMES[i] : `L${i + 1}`,
       pts: t.pts,
+      baselineY: i < sl.length ? sl[i][vK as keyof typeof sl[0]] as number : undefined,
     }));
   }
 
   if (lay.type === 'grid_4x3') {
-    return assignGrid4x3(tr, lb);
+    return assignGrid4x3(tr, lb, vK);
   }
 
   const cyVals = tr.map(t => t.bb!.cy);
@@ -281,22 +297,22 @@ function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: 
   const g1 = tr.filter(t => t.bb!.cy < cyMid).sort((a, b) => a.bb!.cx - b.bb!.cx);
   const g2 = tr.filter(t => t.bb!.cy >= cyMid).sort((a, b) => a.bb!.cx - b.bb!.cx);
 
-  let l1: { text: string }[], l2: { text: string }[];
+  let l1: Label[], l2: Label[];
   if (lb.length >= 12) {
     const labelYs = lb.map(l => l.y);
     const labelMid = (Math.min(...labelYs) + Math.max(...labelYs)) / 2;
     l1 = lb.filter(l => l.y < labelMid).sort((a, b) => a.x - b.x);
     l2 = lb.filter(l => l.y >= labelMid).sort((a, b) => a.x - b.x);
   } else {
-    l1 = LEAD_NAMES.slice(0, 6).map(n => ({ text: n }));
-    l2 = LEAD_NAMES.slice(6).map(n => ({ text: n }));
+    l1 = LEAD_NAMES.slice(0, 6).map(n => ({ text: n, x: 0, y: 0 }));
+    l2 = LEAD_NAMES.slice(6).map(n => ({ text: n, x: 0, y: 0 }));
   }
 
-  const ch: { name: string; pts: Point[] }[] = [];
+  const ch: AssignResult[] = [];
   for (let i = 0; i < g1.length; i++)
-    ch.push({ name: i < l1.length ? l1[i].text : `L${i + 1}`, pts: g1[i].pts });
+    ch.push({ name: i < l1.length ? l1[i].text : `L${i + 1}`, pts: g1[i].pts, baselineY: l1[i]?.[vK as keyof Label] as number | undefined });
   for (let i = 0; i < g2.length; i++)
-    ch.push({ name: i < l2.length ? l2[i].text : `L${i + 7}`, pts: g2[i].pts });
+    ch.push({ name: i < l2.length ? l2[i].text : `L${i + 7}`, pts: g2[i].pts, baselineY: l2[i]?.[vK as keyof Label] as number | undefined });
 
   ch.sort((a, b) => {
     const ia = LEAD_NAMES.indexOf(a.name), ib = LEAD_NAMES.indexOf(b.name);
@@ -306,7 +322,7 @@ function assign(tr: Polyline[], lb: Label[], lay: Layout): { name: string; pts: 
 }
 
 // 4×3 grid: 4 columns (I/aVR/V1/V4, II/aVL/V2/V5, III/aVF/V3/V6) × 3 rows + optional rhythm strip
-function assignGrid4x3(tr: Polyline[], lb: Label[]): { name: string; pts: Point[] }[] {
+function assignGrid4x3(tr: Polyline[], lb: Label[], vK: string): AssignResult[] {
   // Separate rhythm strip (full-width trace spanning most of the page)
   const widths = tr.map(t => t.bb!.dx);
   const medWidth = [...widths].sort((a, b) => a - b)[Math.floor(widths.length / 2)];
@@ -334,25 +350,24 @@ function assignGrid4x3(tr: Polyline[], lb: Label[]): { name: string; pts: Point[
     ['I','II','III'], ['aVR','aVL','aVF'], ['V1','V2','V3'], ['V4','V5','V6'],
   ];
 
-  const ch: { name: string; pts: Point[] }[] = [];
+  const ch: AssignResult[] = [];
 
   // Try label-based matching first: find the closest label for each trace
   if (lb.length >= 12) {
     for (const t of [...grid, ...rhythm]) {
-      let bestLabel = '', bestDist = Infinity;
+      let bestLabel: Label | null = null, bestDist = Infinity;
       for (const l of lb) {
         const dx = l.x - t.bb!.x0;
         const dy = l.y - t.bb!.y0;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < bestDist) { bestDist = dist; bestLabel = l.text; }
+        if (dist < bestDist) { bestDist = dist; bestLabel = l; }
       }
-      // Avoid assigning the same label twice (for rhythm strip duplicate labels)
       const usedNames = ch.map(c => c.name);
-      const name = usedNames.includes(bestLabel) ? bestLabel + '_rhythm' : bestLabel;
-      ch.push({ name, pts: t.pts });
+      const name = bestLabel ? (usedNames.includes(bestLabel.text) ? bestLabel.text + '_rhythm' : bestLabel.text) : `L${ch.length + 1}`;
+      ch.push({ name, pts: t.pts, baselineY: bestLabel?.[vK as keyof Label] as number | undefined });
     }
   } else {
-    // Positional assignment
+    // Positional assignment — no label positions available
     for (let ci = 0; ci < colGroups.length && ci < gridOrder.length; ci++) {
       for (let ri = 0; ri < colGroups[ci].length && ri < gridOrder[ci].length; ri++) {
         ch.push({ name: gridOrder[ci][ri], pts: colGroups[ci][ri].pts });
@@ -440,13 +455,30 @@ function toPhysical(pts: Point[], sc: ScaleInfo, lay: Layout): { samples: number
 
   const dur = Math.abs(s[s.length - 1][tA] - s[0][tA]) / ppsAxis;
 
-  const vv = s.map(p => p[vK]).slice().sort((a, b) => a - b);
-  const med = vv[Math.floor(vv.length / 2)];
+  // Baseline = mode of voltage-axis values (most frequent Y value).
+  // Between heartbeats, the signal sits on the isoelectric line — the Y value
+  // that appears most often. This is more accurate than the median (pulled by
+  // large QRS complexes) or label position (offset from the grid line).
+  const ref = computeMode(s.map(p => p[vK]), 0.5);
 
   const samples = s.map(p => {
-    let mv = (p[vK] - med) / ppvAxis;
+    let mv = (p[vK] - ref) / ppvAxis;
     if (lay.vI) mv = -mv;
     return Math.round(mv * 10000) / 10000;
   });
   return { samples, dur };
+}
+
+// Compute mode (most frequent value) using a histogram with given bin size
+function computeMode(values: number[], binSize: number): number {
+  const hist: Record<number, number> = {};
+  for (const v of values) {
+    const bin = Math.round(v / binSize) * binSize;
+    hist[bin] = (hist[bin] || 0) + 1;
+  }
+  let bestBin = 0, bestCount = 0;
+  for (const bin in hist) {
+    if (hist[bin] > bestCount) { bestCount = hist[bin]; bestBin = parseFloat(bin); }
+  }
+  return bestBin;
 }

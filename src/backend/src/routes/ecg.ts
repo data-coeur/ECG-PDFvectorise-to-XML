@@ -1,4 +1,5 @@
 import express, { Router } from 'express';
+import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -236,5 +237,77 @@ ecgRouter.post('/parse-xml', express.raw({ type: '*/*', limit: '60mb' }), async 
     res.status(500).json({ error: (e as Error).message });
   } finally {
     if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+  }
+});
+
+// Receive anonymized PDF reports for extraction debugging
+const REPORT_DIR = path.join(DATA_DIR, 'reports');
+const GITHUB_ISSUE = 3;
+const GITHUB_REPO = 'data-coeur/ecg-pipeline';
+
+function getGithubToken(): string | null {
+  return process.env.GITHUB_TOKEN || null;
+}
+
+async function postGithubComment(body: string) {
+  const token = getGithubToken();
+  if (!token) { console.warn('[Report] No GitHub token, skipping issue comment'); return; }
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/issues/${GITHUB_ISSUE}/comments`, {
+      method: 'POST',
+      headers: { Authorization: `token ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) console.warn(`[Report] GitHub comment failed: ${res.status}`);
+    else console.log('[Report] GitHub issue comment posted');
+  } catch (e) { console.warn('[Report] GitHub comment error:', e); }
+}
+
+const upload = multer({
+  dest: REPORT_DIR,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, file.mimetype === 'application/pdf');
+  },
+});
+
+ecgRouter.post('/report', upload.single('pdf'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No PDF file' });
+
+    if (!fs.existsSync(REPORT_DIR)) fs.mkdirSync(REPORT_DIR, { recursive: true });
+
+    const ts = new Date().toISOString().replace(/[-:T]/g, '_').replace(/\.\d+Z/, '');
+    const dest = path.join(REPORT_DIR, `report_${ts}.pdf`);
+    fs.renameSync(req.file.path, dest);
+
+    const manufacturer = (req.body?.manufacturer as string) || 'Inconnu';
+    const layout = (req.body?.layout as string) || 'Inconnu';
+    const channels = (req.body?.channels as string) || '?';
+    const filename = (req.body?.filename as string) || 'unknown.pdf';
+    const sizeKb = Math.round((req.file.size || 0) / 1024);
+
+    console.log(`[Report] Received anonymized PDF: ${dest} (${sizeKb} KB)`);
+
+    // Post comment on GitHub issue
+    const comment = [
+      `## Nouveau signalement — ${new Date().toISOString().split('T')[0]}`,
+      '',
+      `| Info | Valeur |`,
+      `|------|--------|`,
+      `| **Fabricant** | ${manufacturer} |`,
+      `| **Layout** | ${layout} |`,
+      `| **Canaux** | ${channels} |`,
+      `| **Fichier source** | \`${filename}\` |`,
+      `| **PDF anonymisé** | \`${dest}\` (${sizeKb} KB) |`,
+      `| **Statut** | En attente |`,
+    ].join('\n');
+
+    postGithubComment(comment).catch(() => {});
+
+    res.json({ success: true, filename: path.basename(dest) });
+  } catch (e) {
+    console.error('Report upload error:', e);
+    res.status(500).json({ error: (e as Error).message });
   }
 });

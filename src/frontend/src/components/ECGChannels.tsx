@@ -1,64 +1,91 @@
 import { useRef, useEffect } from 'react';
 import type { ECGChannel } from '../lib/types';
 
-function drawSignal(cv: HTMLCanvasElement, samples: number[]) {
+// Standard ECG paper: 25mm/s, 10mm/mV
+const MM_PER_S = 25;
+const MM_PER_MV = 10;
+
+function drawSignal(cv: HTMLCanvasElement, samples: number[], pxPerMm: number, topMm: number, bottomMm: number) {
   const ctx = cv.getContext('2d')!;
   const w = cv.width, h = cv.height;
+  const pxPerMv = pxPerMm * MM_PER_MV;
+
+  // Baseline position: topMm from top edge, bottomMm below
+  const baseY = topMm * pxPerMm;
 
   // Clinical paper background
   ctx.fillStyle = '#fff5f5';
   ctx.fillRect(0, 0, w, h);
 
-  // Minor grid (light pink)
+  // Minor grid: 1mm squares
+  const minor = pxPerMm;
   ctx.strokeStyle = '#fce4ec';
   ctx.lineWidth = 0.5;
-  const gridStep = w / 70;
-  for (let x = 0; x < w; x += gridStep) {
+  for (let x = 0; x < w; x += minor) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
   }
-  for (let y = 0; y < h; y += gridStep) {
+  for (let y = 0; y < h; y += minor) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   }
 
-  // Major grid (darker pink)
+  // Major grid: 5mm squares
+  const major = pxPerMm * 5;
   ctx.strokeStyle = '#f8bbd0';
   ctx.lineWidth = 0.8;
-  const majorStep = gridStep * 5;
-  for (let x = 0; x < w; x += majorStep) {
+  for (let x = 0; x < w; x += major) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
   }
-  for (let y = 0; y < h; y += majorStep) {
+  for (let y = 0; y < h; y += major) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   }
 
   if (samples.length < 2) return;
 
-  // Center baseline
-  ctx.strokeStyle = 'rgba(8,145,178,0.1)';
+  // Baseline
+  ctx.strokeStyle = 'rgba(8,145,178,0.12)';
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(w, baseY); ctx.stroke();
 
-  let mn = 1e9, mx = -1e9;
-  for (const v of samples) { if (v < mn) mn = v; if (v > mx) mx = v; }
-  const r = Math.max(mx - mn, 0.05), m = (mx + mn) / 2, sc = h * 0.85 / r;
-
-  // ECG trace (medical green)
+  // ECG trace — samples are in mV relative to grid baseline (0mV)
   ctx.strokeStyle = '#059669';
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   for (let i = 0; i < samples.length; i++) {
-    const x = i / (samples.length - 1) * w, y = h / 2 - (samples[i] - m) * sc;
+    const x = i / (samples.length - 1) * w;
+    const y = baseY - samples[i] * pxPerMv;
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   }
   ctx.stroke();
+
+  // 1mV calibration bar (bottom-right corner)
+  const barX = w - 12;
+  const barH = pxPerMv;
+  const barTop = h - 10 - barH;
+  if (barTop > 10) {
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(barX, barTop + barH); ctx.lineTo(barX, barTop);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(barX - 3, barTop); ctx.lineTo(barX + 3, barTop);
+    ctx.moveTo(barX - 3, barTop + barH); ctx.lineTo(barX + 3, barTop + barH);
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('1mV', barX - 5, barTop + barH / 2 + 3);
+  }
 }
 
-function ChannelCard({ ch }: { ch: ECGChannel }) {
+function ChannelCard({ ch, pxPerMm, canvasH, topMm, bottomMm }: {
+  ch: ECGChannel; pxPerMm: number; canvasH: number; topMm: number; bottomMm: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (canvasRef.current) drawSignal(canvasRef.current, ch.samples);
-  }, [ch.samples]);
+    if (canvasRef.current) drawSignal(canvasRef.current, ch.samples, pxPerMm, topMm, bottomMm);
+  }, [ch.samples, pxPerMm, topMm, bottomMm]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-white/40 bg-white/50 backdrop-blur-sm">
@@ -68,7 +95,7 @@ function ChannelCard({ ch }: { ch: ECGChannel }) {
           {ch.samples.length} pts · {ch.duration_s.toFixed(2)}s · {ch.sample_rate_hz}Hz
         </span>
       </div>
-      <canvas ref={canvasRef} width={1400} height={70} className="block w-full h-[70px]" />
+      <canvas ref={canvasRef} width={1400} height={canvasH} className="block w-full" style={{ aspectRatio: `${1400} / ${canvasH}` }} />
     </div>
   );
 }
@@ -76,9 +103,31 @@ function ChannelCard({ ch }: { ch: ECGChannel }) {
 interface Props { channels: ECGChannel[] }
 
 export default function ECGChannels({ channels }: Props) {
+  // Compute uniform px/mm scale from the first channel's duration
+  const duration = channels[0]?.duration_s || 10;
+  const pxPerMm = 1400 / (duration * MM_PER_S);
+  const mmPerMv = MM_PER_MV;
+
+  // Compute global max above / below 0mV baseline across all channels
+  let globalMaxMv = 0, globalMinMv = 0;
+  for (const ch of channels) {
+    if (ch.samples.length < 2) continue;
+    for (const v of ch.samples) {
+      if (v > globalMaxMv) globalMaxMv = v;
+      if (v < globalMinMv) globalMinMv = v;
+    }
+  }
+
+  // Round up to next 5mm grid line (0.5mV) with a small margin
+  const topMm = Math.max(5, Math.ceil((globalMaxMv * mmPerMv + 2) / 5) * 5);
+  const bottomMm = Math.max(5, Math.ceil((Math.abs(globalMinMv) * mmPerMv + 2) / 5) * 5);
+  const canvasH = Math.round((topMm + bottomMm) * pxPerMm);
+
   return (
     <div className="flex flex-col gap-2">
-      {channels.map(ch => <ChannelCard key={ch.name} ch={ch} />)}
+      {channels.map(ch => (
+        <ChannelCard key={ch.name} ch={ch} pxPerMm={pxPerMm} canvasH={canvasH} topMm={topMm} bottomMm={bottomMm} />
+      ))}
     </div>
   );
 }

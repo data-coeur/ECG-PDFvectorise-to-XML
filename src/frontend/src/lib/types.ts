@@ -5,6 +5,7 @@ export interface Polyline {
   col: number[];
   w: number;
   bb?: BoundingBox;
+
 }
 
 export interface BoundingBox {
@@ -32,6 +33,7 @@ export interface ECGChannel {
   sample_rate_hz: number;
   voltage_unit: string;
   time_unit: string;
+  bbox?: { x0: number; x1: number; y0: number; y1: number };
 }
 
 export interface ECGData {

@@ -15,6 +15,7 @@ import AnonymizeCard from './components/AnonymizeCard';
 import JsonViewer from './components/JsonViewer';
 import InfoCard from './components/InfoCard';
 import DevModeView from './components/DevModeView';
+import ReportModal from './components/ReportModal';
 
 export default function App() {
   const { t } = useLanguage();
@@ -26,6 +27,7 @@ export default function App() {
   const [hasDownload, setHasDownload] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
     if (hasDownload) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
@@ -149,6 +151,15 @@ export default function App() {
               <StatusBar message={status.msg} type={status.type} loading={status.loading} />
               {ecgData && (
                 <div className="ml-auto flex shrink-0 gap-2">
+                  {pdfFile && (
+                    <button
+                      className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-1.5 text-xs font-medium text-amber-600 transition-all hover:border-amber-400 hover:bg-amber-100"
+                      onClick={() => setShowReport(true)}
+                      title={t('report.title' as TranslationKey)}
+                    >
+                      {t('report.btn' as TranslationKey)}
+                    </button>
+                  )}
                   <button
                     className="rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
                     onClick={handleDownloadJson}
@@ -203,6 +214,11 @@ export default function App() {
           <DevModeView ecgData={ecgData} file={pdfFile} />
         )}
       </main>
+
+      {/* Report extraction issue modal */}
+      {showReport && pdfFile && ecgData && (
+        <ReportModal pdfFile={pdfFile} ecgData={ecgData} onClose={() => setShowReport(false)} />
+      )}
     </div>
   );
 }

@@ -100,6 +100,16 @@ const translations = {
     'anon.removed': 'éléments texte supprimés',
     'anon.error': 'Erreur',
 
+    // Report extraction issue
+    'report.btn': 'Signaler',
+    'report.title': 'Signaler une extraction incorrecte',
+    'report.body': 'Pour améliorer l\'algorithme d\'extraction, nous avons besoin du PDF source. Le fichier sera anonymisé (toutes les données patient supprimées) avant l\'envoi au serveur.',
+    'report.confirm': 'Anonymiser et envoyer',
+    'report.cancel': 'Annuler',
+    'report.sending': 'Anonymisation et envoi...',
+    'report.done': 'PDF envoyé — merci !',
+    'report.error': 'Erreur lors de l\'envoi',
+
     // Dev mode
     'dev.pdfSource': 'Source PDF',
     'dev.extractedSignals': 'Signaux extraits',
@@ -208,6 +218,16 @@ const translations = {
     'anon.verified': 'Verified: 0 text remaining',
     'anon.removed': 'text items removed',
     'anon.error': 'Error',
+
+    // Report extraction issue
+    'report.btn': 'Report',
+    'report.title': 'Report incorrect extraction',
+    'report.body': 'To improve the extraction algorithm, we need the source PDF. The file will be anonymized (all patient data removed) before being sent to the server.',
+    'report.confirm': 'Anonymize & send',
+    'report.cancel': 'Cancel',
+    'report.sending': 'Anonymizing & sending...',
+    'report.done': 'PDF sent — thank you!',
+    'report.error': 'Error sending file',
 
     // Dev mode
     'dev.pdfSource': 'PDF Source',
