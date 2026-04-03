@@ -6,7 +6,7 @@
  *   "full"  — Remove ALL non-waveform content (strip everything except signal data)
  */
 
-import type { AnonMode } from './pdf-anonymize';
+import type { AnonMode } from '../pdf-anonymize';
 
 /* ------------------------------------------------------------------ */
 /*  Patient data tag names (case-insensitive matching)                  */

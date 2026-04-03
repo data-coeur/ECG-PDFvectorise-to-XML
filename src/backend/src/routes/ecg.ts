@@ -1,13 +1,7 @@
-import express, { Router } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { fileURLToPath } from 'url';
-
-const execFileAsync = promisify(execFile);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { writeEDF } from '../writers/edf.js';
 import { writeWFDB } from '../writers/wfdb.js';
 import { writeDICOM } from '../writers/dicom.js';
@@ -167,78 +161,9 @@ ecgRouter.post('/convert/:format', async (req, res) => {
   }
 });
 
-// Legacy: receive and convert all formats at once
-ecgRouter.post('/receive', async (req, res) => {
-  try {
-    const data = req.body;
-    if (!data?.channels?.length) return res.status(400).json({ error: 'No channels' });
-
-    const channels: Channel[] = data.channels;
-    const base = makeBase(data.manufacturer);
-
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-    fs.writeFileSync(path.join(DATA_DIR, `${base}.json`), JSON.stringify(data, null, 2));
-
-    const { resampled, sampleRate, samplesPerCh, maxDur } = resample(channels);
-
-    const files: Record<string, string> = {};
-    for (const fmt of VALID_FORMATS) {
-      if (fmt === 'webp') {
-        await writeWebP(channels, data, path.join(DATA_DIR, `${base}.webp`));
-        files.webp = `${base}.webp`;
-      } else {
-        Object.assign(files, convertFormat(fmt, channels, resampled, samplesPerCh, sampleRate, maxDur, base, data));
-      }
-    }
-
-    res.json({
-      success: true,
-      base,
-      files,
-      info: {
-        manufacturer: data.manufacturer || '?',
-        layout: data.layout || 'stacked_12x1',
-        channels: channels.length,
-        sample_rate: sampleRate,
-        duration: Math.round(maxDur * 100) / 100,
-      },
-    });
-  } catch (e) {
-    console.error('ECG receive error:', e);
-    res.status(500).json({ error: (e as Error).message });
-  }
-});
-
-// Parse XML ECG file via ecg-datakit (Python)
-ecgRouter.post('/parse-xml', express.raw({ type: '*/*', limit: '60mb' }), async (req, res) => {
-  const tmpFile = path.join(DATA_DIR, `_tmp_${Date.now()}.xml`);
-  try {
-    const filename = (req.headers['x-filename'] as string) || 'ecg.xml';
-
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(tmpFile, req.body);
-
-    // In container: __dirname = /app/dist/routes/, scripts at /app/scripts/
-    const scriptPath = path.resolve(__dirname, '../../scripts/parse_xml_ecg.py');
-    const { stdout, stderr } = await execFileAsync('python3', [scriptPath, tmpFile, filename], {
-      timeout: 30000,
-      maxBuffer: 100 * 1024 * 1024,
-    });
-
-    if (stderr) console.warn('Python stderr:', stderr);
-
-    const result = JSON.parse(stdout);
-    if (result.error) return res.status(400).json({ error: result.error });
-
-    res.json(result);
-  } catch (e) {
-    console.error('XML parse error:', e);
-    res.status(500).json({ error: (e as Error).message });
-  } finally {
-    if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
-  }
-});
+// Legacy: XML input parsing disabled (data privacy — XML files may contain patient data
+// that would transit to the server). To be replaced by client-side parsing.
+// See: src/backend/scripts/parse_xml_ecg.py, src/frontend/src/lib/xml-extract.ts
 
 // Receive anonymized PDF reports for extraction debugging
 const REPORT_DIR = path.join(DATA_DIR, 'reports');

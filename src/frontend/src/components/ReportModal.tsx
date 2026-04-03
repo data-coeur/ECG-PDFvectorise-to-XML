@@ -6,7 +6,7 @@ import type { ECGData } from '../lib/types';
 
 interface Props {
   pdfFile: File;
-  ecgData: ECGData;
+  ecgData: ECGData | null;
   onClose: () => void;
 }
 
@@ -29,9 +29,9 @@ export default function ReportModal({ pdfFile, ecgData, onClose }: Props) {
       const anonBlob = new Blob([anonBuf], { type: 'application/pdf' });
       const safeName = pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       formData.append('pdf', anonBlob, `report_${safeName}`);
-      formData.append('manufacturer', ecgData.manufacturer);
-      formData.append('layout', ecgData.layout);
-      formData.append('channels', String(ecgData.channels.length));
+      formData.append('manufacturer', ecgData?.manufacturer ?? 'unknown');
+      formData.append('layout', ecgData?.layout ?? 'unknown');
+      formData.append('channels', String(ecgData?.channels.length ?? 0));
       formData.append('filename', pdfFile.name);
 
       const res = await fetch('/api/ecg/report', { method: 'POST', body: formData });

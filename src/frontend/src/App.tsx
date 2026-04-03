@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { ECGData } from './lib/types';
 import { extractFromPdf } from './lib/ecg-extract';
-import { parseXmlViaBackend } from './lib/xml-extract';
+// Legacy: XML input parsing disabled — see xml-extract.ts
+// import { parseXmlViaBackend } from './lib/xml-extract';
 import { useLanguage } from './i18n';
 import type { TranslationKey } from './i18n';
 import LanguageToggle from './components/LanguageToggle';
@@ -38,15 +39,14 @@ export default function App() {
   }, [ecgData, status.loading, converting, hasDownload]);
 
   const handleFile = useCallback(async (file: File) => {
-    const isXml = /\.xml$/i.test(file.name);
     const isPdf = /\.pdf$/i.test(file.name);
-    if (!isPdf && !isXml) {
+    if (!isPdf) {
       setStatus({ msg: t('status.unsupported'), type: 'err', loading: false });
       return;
     }
     setStatus({ msg: t('status.extracting'), type: '', loading: true });
     setEcgData(null);
-    setPdfFile(isPdf ? file : null);
+    setPdfFile(file);
     setXmlContent(null);
     setConverting(false);
     setHasDownload(false);
@@ -54,13 +54,7 @@ export default function App() {
     setShowRawJson(false);
     try {
       let result: ECGData | null;
-      if (isXml) {
-        const text = await file.text();
-        setXmlContent(text);
-        result = await parseXmlViaBackend(file);
-      } else {
-        result = await extractFromPdf(file);
-      }
+      result = await extractFromPdf(file);
       if (!result || !result.channels.length) {
         setStatus({ msg: t('status.noSignal'), type: 'err', loading: false });
         return;
@@ -69,7 +63,12 @@ export default function App() {
       const layoutLabel = t(`layout.${result.layout}` as TranslationKey) || result.layout;
       setStatus({ msg: `${result.channels.length} ${t('status.channels')} · ${result.manufacturer} · ${layoutLabel}`, type: 'ok', loading: false });
     } catch (e) {
-      setStatus({ msg: (e as Error).message, type: 'err', loading: false });
+      const msg = (e as Error).message;
+      if (msg === 'GRID_NOT_DETECTED') {
+        setStatus({ msg: t('status.noGrid' as TranslationKey), type: 'err', loading: false });
+      } else {
+        setStatus({ msg, type: 'err', loading: false });
+      }
     }
   }, [t]);
 
@@ -149,7 +148,7 @@ export default function App() {
 
             <div className="mt-3 flex items-center gap-3">
               <StatusBar message={status.msg} type={status.type} loading={status.loading} />
-              {ecgData && (
+              {(ecgData || (status.type === 'err' && pdfFile)) && (
                 <div className="ml-auto flex shrink-0 gap-2">
                   {pdfFile && (
                     <button
@@ -160,22 +159,26 @@ export default function App() {
                       {t('report.btn' as TranslationKey)}
                     </button>
                   )}
-                  <button
-                    className="rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
-                    onClick={handleDownloadJson}
-                  >
-                    ↓ {t('btn.json')}
-                  </button>
-                  <button
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
-                      showRawJson
-                        ? 'border-primary/40 bg-primary/10 text-primary'
-                        : 'border-slate-200 bg-white/60 text-slate-600 hover:border-primary/40 hover:text-primary'
-                    }`}
-                    onClick={() => setShowRawJson(v => !v)}
-                  >
-                    { showRawJson ? '✕' : '{ }' } {t('btn.rawJson')}
-                  </button>
+                  {ecgData && (
+                    <>
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
+                        onClick={handleDownloadJson}
+                      >
+                        ↓ {t('btn.json')}
+                      </button>
+                      <button
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                          showRawJson
+                            ? 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-slate-200 bg-white/60 text-slate-600 hover:border-primary/40 hover:text-primary'
+                        }`}
+                        onClick={() => setShowRawJson(v => !v)}
+                      >
+                        { showRawJson ? '✕' : '{ }' } {t('btn.rawJson')}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -216,7 +219,7 @@ export default function App() {
       </main>
 
       {/* Report extraction issue modal */}
-      {showReport && pdfFile && ecgData && (
+      {showReport && pdfFile && (
         <ReportModal pdfFile={pdfFile} ecgData={ecgData} onClose={() => setShowReport(false)} />
       )}
     </div>

@@ -36,12 +36,20 @@ export interface ECGChannel {
   bbox?: { x0: number; x1: number; y0: number; y1: number };
 }
 
+export interface GridInfo {
+  spacingX: number;
+  spacingY: number;
+  hLines: number[];
+  vLines: number[];
+}
+
 export interface ECGData {
   manufacturer: string;
   layout: string;
   filename: string;
   page_size: { width: number; height: number };
   scale: { mm_per_s: number; mm_per_mV: number; pts_per_mm: number };
+  grid: GridInfo;
   channels: ECGChannel[];
 }
 

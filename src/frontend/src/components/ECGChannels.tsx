@@ -5,48 +5,60 @@ import type { ECGChannel } from '../lib/types';
 const MM_PER_S = 25;
 const MM_PER_MV = 10;
 
-function drawSignal(cv: HTMLCanvasElement, samples: number[], pxPerMm: number, topMm: number, bottomMm: number) {
+// Each lead gets a fixed grid region matching standard ECG paper layout.
+// The baseline (0mV) sits at a fixed position, and the signal is drawn
+// at its ABSOLUTE mV position — no centering, no auto-scaling.
+const GRID_HALF_MM = 15; // 15mm above and below baseline = ±1.5mV visible range
+
+function drawSignal(cv: HTMLCanvasElement, samples: number[], pxPerMm: number) {
   const ctx = cv.getContext('2d')!;
   const w = cv.width, h = cv.height;
   const pxPerMv = pxPerMm * MM_PER_MV;
 
-  // Baseline position: topMm from top edge, bottomMm below
-  const baseY = topMm * pxPerMm;
+  // Baseline always at center of canvas
+  const baseY = h / 2;
 
   // Clinical paper background
   ctx.fillStyle = '#fff5f5';
   ctx.fillRect(0, 0, w, h);
 
-  // Minor grid: 1mm squares
+  // Minor grid: 1mm squares, anchored to baseline
   const minor = pxPerMm;
   ctx.strokeStyle = '#fce4ec';
   ctx.lineWidth = 0.5;
   for (let x = 0; x < w; x += minor) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
   }
-  for (let y = 0; y < h; y += minor) {
+  // Draw from baseline up and down so grid lines align perfectly with mV values
+  for (let y = baseY; y >= 0; y -= minor) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  for (let y = baseY + minor; y < h; y += minor) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   }
 
-  // Major grid: 5mm squares
+  // Major grid: 5mm squares (= 0.5mV), also anchored to baseline
   const major = pxPerMm * 5;
   ctx.strokeStyle = '#f8bbd0';
   ctx.lineWidth = 0.8;
   for (let x = 0; x < w; x += major) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
   }
-  for (let y = 0; y < h; y += major) {
+  for (let y = baseY; y >= 0; y -= major) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  for (let y = baseY + major; y < h; y += major) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   }
 
   if (samples.length < 2) return;
 
-  // Baseline
-  ctx.strokeStyle = 'rgba(8,145,178,0.12)';
+  // Baseline indicator
+  ctx.strokeStyle = 'rgba(8,145,178,0.15)';
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(w, baseY); ctx.stroke();
 
-  // ECG trace — samples are in mV relative to grid baseline (0mV)
+  // ECG trace at absolute mV positions
   ctx.strokeStyle = '#059669';
   ctx.lineWidth = 1.4;
   ctx.beginPath();
@@ -78,14 +90,12 @@ function drawSignal(cv: HTMLCanvasElement, samples: number[], pxPerMm: number, t
   }
 }
 
-function ChannelCard({ ch, pxPerMm, canvasH, topMm, bottomMm }: {
-  ch: ECGChannel; pxPerMm: number; canvasH: number; topMm: number; bottomMm: number;
-}) {
+function ChannelCard({ ch, pxPerMm, canvasH }: { ch: ECGChannel; pxPerMm: number; canvasH: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (canvasRef.current) drawSignal(canvasRef.current, ch.samples, pxPerMm, topMm, bottomMm);
-  }, [ch.samples, pxPerMm, topMm, bottomMm]);
+    if (canvasRef.current) drawSignal(canvasRef.current, ch.samples, pxPerMm);
+  }, [ch.samples, pxPerMm]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-white/40 bg-white/50 backdrop-blur-sm">
@@ -103,30 +113,15 @@ function ChannelCard({ ch, pxPerMm, canvasH, topMm, bottomMm }: {
 interface Props { channels: ECGChannel[] }
 
 export default function ECGChannels({ channels }: Props) {
-  // Compute uniform px/mm scale from the first channel's duration
   const duration = channels[0]?.duration_s || 10;
   const pxPerMm = 1400 / (duration * MM_PER_S);
-  const mmPerMv = MM_PER_MV;
-
-  // Compute global max above / below 0mV baseline across all channels
-  let globalMaxMv = 0, globalMinMv = 0;
-  for (const ch of channels) {
-    if (ch.samples.length < 2) continue;
-    for (const v of ch.samples) {
-      if (v > globalMaxMv) globalMaxMv = v;
-      if (v < globalMinMv) globalMinMv = v;
-    }
-  }
-
-  // Round up to next 5mm grid line (0.5mV) with a small margin
-  const topMm = Math.max(5, Math.ceil((globalMaxMv * mmPerMv + 2) / 5) * 5);
-  const bottomMm = Math.max(5, Math.ceil((Math.abs(globalMinMv) * mmPerMv + 2) / 5) * 5);
-  const canvasH = Math.round((topMm + bottomMm) * pxPerMm);
+  // Fixed grid height: same for all leads, matching original PDF layout
+  const canvasH = Math.round(GRID_HALF_MM * 2 * pxPerMm);
 
   return (
     <div className="flex flex-col gap-2">
       {channels.map(ch => (
-        <ChannelCard key={ch.name} ch={ch} pxPerMm={pxPerMm} canvasH={canvasH} topMm={topMm} bottomMm={bottomMm} />
+        <ChannelCard key={ch.name} ch={ch} pxPerMm={pxPerMm} canvasH={canvasH} />
       ))}
     </div>
   );

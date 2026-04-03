@@ -7,7 +7,7 @@
  * Anonymization remains 100% browser-side (see xml-anonymize.ts).
  */
 
-import type { ECGData } from './types';
+import type { ECGData } from '../types';
 
 /**
  * Send XML file to backend for parsing via ecg-datakit (Python).

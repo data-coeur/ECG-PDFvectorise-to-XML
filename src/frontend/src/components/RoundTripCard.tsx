@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
 import type { ECGData, ECGChannel } from '../lib/types';
+import PdfStrip from './PdfStrip';
+import { drawSignalCanvas } from './SignalCanvas';
 
 type FmtDef = {
   key: string;
@@ -19,8 +21,6 @@ const FORMATS: FmtDef[] = [
   { key: 'webp', apiFormat: 'webp', label: 'WebP 4K', enabled: true, mode: 'image' },
 ];
 
-const MM_PER_MV = 10;
-
 type State = 'idle' | 'converting' | 'reading' | 'done' | 'error';
 
 interface Props {
@@ -28,102 +28,14 @@ interface Props {
   page: PDFPageProxy | null;
 }
 
-// Render a cropped region of the PDF page for a given lead
-function PdfStrip({ page, bbox, targetHeight }: {
-  page: PDFPageProxy;
-  bbox: { x0: number; x1: number; y0: number; y1: number };
-  targetHeight: number;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const cv = canvasRef.current;
-    const container = containerRef.current;
-    if (!cv || !container || !page) return;
-    let cancelled = false;
-    (async () => {
-      const baseVp = page.getViewport({ scale: 1 });
-      const traceH = bbox.y1 - bbox.y0;
-      const traceW = bbox.x1 - bbox.x0;
-      const marginY = traceH * 0.4;
-      const marginX = traceW * 0.03;
-      const cropY0 = Math.max(0, bbox.y0 - marginY);
-      const cropY1 = Math.min(baseVp.height, bbox.y1 + marginY);
-      const cropX0 = Math.max(0, bbox.x0 - marginX);
-      const cropX1 = Math.min(baseVp.width, bbox.x1 + marginX);
-      const cropH = cropY1 - cropY0;
-      const cropW = cropX1 - cropX0;
-      const dpr = window.devicePixelRatio || 1;
-      const cssWidth = container.clientWidth;
-      const renderScale = Math.max((cssWidth * dpr) / cropW, (targetHeight * dpr) / cropH);
-      const vp = page.getViewport({ scale: renderScale, offsetX: -cropX0 * renderScale, offsetY: -cropY0 * renderScale });
-      cv.width = Math.round(cropW * renderScale);
-      cv.height = Math.round(cropH * renderScale);
-      const ctx = cv.getContext('2d')!;
-      ctx.clearRect(0, 0, cv.width, cv.height);
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      if (cancelled) return;
-    })();
-    return () => { cancelled = true; };
-  }, [page, bbox, targetHeight]);
-
-  return (
-    <div ref={containerRef} className="w-full">
-      <canvas ref={canvasRef} className="w-full rounded-lg border border-white/40" style={{ height: `${targetHeight}px` }} />
-    </div>
-  );
-}
-
-// Draw ECG signal on canvas
-function drawSignalCanvas(cv: HTMLCanvasElement, samples: number[], pxPerMm: number, topMm: number, bottomMm: number) {
-  const ctx = cv.getContext('2d')!;
-  const w = cv.width, h = cv.height;
-  const pxPerMv = pxPerMm * MM_PER_MV;
-  const baseY = topMm * pxPerMm;
-
-  ctx.fillStyle = '#fff5f5';
-  ctx.fillRect(0, 0, w, h);
-
-  const minor = pxPerMm;
-  ctx.strokeStyle = '#fce4ec';
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x < w; x += minor) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-  for (let y = 0; y < h; y += minor) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-
-  const major = pxPerMm * 5;
-  ctx.strokeStyle = '#f8bbd0';
-  ctx.lineWidth = 0.8;
-  for (let x = 0; x < w; x += major) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-  for (let y = 0; y < h; y += major) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-
-  if (samples.length < 2) return;
-
-  ctx.strokeStyle = 'rgba(8,145,178,0.12)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(w, baseY); ctx.stroke();
-
-  ctx.strokeStyle = '#059669';
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  for (let i = 0; i < samples.length; i++) {
-    const x = i / (samples.length - 1) * w;
-    const y = baseY - samples[i] * pxPerMv;
-    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-  }
-  ctx.stroke();
-}
-
 // One lead row: PDF crop left | readback signal right
-function LeadRow({ origCh, readCh, page, canvasW, canvasH, pxPerMm, topMm, bottomMm }: {
+function LeadRow({ origCh, readCh, page, canvasW, canvasH, pxPerMm }: {
   origCh: ECGChannel;
   readCh: ECGChannel | undefined;
   page: PDFPageProxy | null;
   canvasW: number;
   canvasH: number;
   pxPerMm: number;
-  topMm: number;
-  bottomMm: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const signalDivRef = useRef<HTMLDivElement>(null);
@@ -132,8 +44,8 @@ function LeadRow({ origCh, readCh, page, canvasW, canvasH, pxPerMm, topMm, botto
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !readCh) return;
-    drawSignalCanvas(cv, readCh.samples, pxPerMm, topMm, bottomMm);
-  }, [readCh, pxPerMm, topMm, bottomMm]);
+    drawSignalCanvas(cv, readCh.samples, pxPerMm);
+  }, [readCh, pxPerMm]);
 
   useEffect(() => {
     const div = signalDivRef.current;
@@ -218,21 +130,9 @@ export default function RoundTripCard({ ecgData, page }: Props) {
 
       setState('reading');
 
+      // Legacy: HL7 aECG round-trip parsing disabled (requires backend XML parser)
       if (fmt.key === 'hl7aecg') {
-        const fileRes = await fetch(fileUrl);
-        if (!fileRes.ok) throw new Error(`Download failed: ${fileRes.status}`);
-        const xmlBytes = await fileRes.arrayBuffer();
-
-        const parseRes = await fetch('/api/ecg/parse-xml', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': firstFile },
-          body: xmlBytes,
-        });
-        if (!parseRes.ok) throw new Error(`Parse failed: ${parseRes.status}`);
-        const parsed = await parseRes.json();
-        if (parsed.error) throw new Error(parsed.error);
-
-        setReadChannels(parsed.channels || []);
+        throw new Error('HL7 aECG round-trip verification not available');
       }
 
       setState('done');
@@ -242,24 +142,11 @@ export default function RoundTripCard({ ecgData, page }: Props) {
     }
   }, [ecgData]);
 
-  // Compute uniform scale for readback signals (same logic as ECGChannels)
   const duration = ecgData.channels[0]?.duration_s || 10;
   const pxPerMm = 1400 / (duration * 25);
-
-  let globalMaxMv = 0, globalMinMv = 0;
-  const allChannels = readChannels || ecgData.channels;
-  for (const ch of allChannels) {
-    if (ch.samples.length < 2) continue;
-    for (const v of ch.samples) {
-      if (v > globalMaxMv) globalMaxMv = v;
-      if (v < globalMinMv) globalMinMv = v;
-    }
-  }
-
-  const topMm = Math.max(5, Math.ceil((globalMaxMv * MM_PER_MV + 2) / 5) * 5);
-  const bottomMm = Math.max(5, Math.ceil((Math.abs(globalMinMv) * MM_PER_MV + 2) / 5) * 5);
-  const canvasH = Math.round((topMm + bottomMm) * pxPerMm);
   const canvasW = 1400;
+  const GRID_HALF_MM = 15;
+  const canvasH = Math.round(GRID_HALF_MM * 2 * pxPerMm);
 
   const activeFmt = FORMATS.find(f => f.key === selected);
 
@@ -326,8 +213,6 @@ export default function RoundTripCard({ ecgData, page }: Props) {
                   canvasW={canvasW}
                   canvasH={canvasH}
                   pxPerMm={pxPerMm}
-                  topMm={topMm}
-                  bottomMm={bottomMm}
                 />
               );
             })}
