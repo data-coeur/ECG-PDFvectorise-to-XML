@@ -8,6 +8,8 @@ import type { TranslationKey } from './i18n';
 import LanguageToggle from './components/LanguageToggle';
 import StepIndicator, { type Step } from './components/StepIndicator';
 import DropZone from './components/DropZone';
+import BatchConversionButton from './components/BatchConversionButton';
+import BatchConversionModal from './components/BatchConversionModal';
 import StatusBar from './components/StatusBar';
 import ECGImageView from './components/ECGImageView';
 import FormatCards from './components/FormatCards';
@@ -24,6 +26,7 @@ export default function App() {
   const [hasDownload, setHasDownload] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showBatch, setShowBatch] = useState(false);
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
     if (hasDownload) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
@@ -129,7 +132,10 @@ export default function App() {
         {/* Input section — hidden in dev mode */}
         {!devMode && (
           <div className="glass-card p-5 mt-2">
-            <DropZone onFile={handleFile} disabled={status.loading} />
+            <div className="mb-3">
+              <BatchConversionButton />
+            </div>
+            <DropZone onFile={handleFile} onMultiple={() => setShowBatch(true)} disabled={status.loading} />
 
             <div className="mt-3 flex items-center gap-3">
               <StatusBar message={status.msg} type={status.type} loading={status.loading} />
@@ -179,6 +185,9 @@ export default function App() {
       {showReport && pdfFile && (
         <ReportModal pdfFile={pdfFile} ecgData={ecgData} onClose={() => setShowReport(false)} />
       )}
+
+      {/* Batch conversion modal — also triggered by multi-file drop */}
+      <BatchConversionModal open={showBatch} onClose={() => setShowBatch(false)} />
     </div>
   );
 }

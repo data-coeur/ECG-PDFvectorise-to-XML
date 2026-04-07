@@ -1,6 +1,16 @@
 import type { Point, Polyline } from '../types';
 import { OPS } from './constants';
 
+// Normalize an RGB color to [0, 1] range. pdfjs sometimes returns colors in
+// [0, 255] range (e.g. for matplotlib-generated PDFs) — detect this by checking
+// if any component is > 1 and divide by 255 in that case.
+function normalizeColor(c: number[]): number[] {
+  if (c[0] > 1 || c[1] > 1 || c[2] > 1) {
+    return [c[0] / 255, c[1] / 255, c[2] / 255];
+  }
+  return c;
+}
+
 // 6-element affine matrix: [a, b, c, d, e, f]
 // Transforms (x, y) → (a*x + c*y + e, b*x + d*y + f)
 export function matMul(m1: number[], m2: number[]): number[] {
@@ -55,8 +65,8 @@ function parseWithCTM(ops: { fnArray: number[]; argsArray: unknown[][] }, vpT: n
       case OPS.save: ctmStack.push([...ctm]); break;
       case OPS.restore: if (ctmStack.length) ctm = ctmStack.pop()!; break;
       case OPS.transform: ctm = matMul(ctm, a); break;
-      case OPS.setStrokeRGBColor: col = [a[0], a[1], a[2]]; break;
-      case OPS.setStrokeGray: col = [a[0], a[0], a[0]]; break;
+      case OPS.setStrokeRGBColor: col = normalizeColor([a[0], a[1], a[2]]); break;
+      case OPS.setStrokeGray: col = normalizeColor([a[0], a[0], a[0]]); break;
       case OPS.setLineWidth: w = a[0]; break;
       case OPS.moveTo: fl(); addPt(a[0], a[1]); break;
       case OPS.lineTo: addPt(a[0], a[1]); break;
@@ -93,8 +103,8 @@ function parseViewportOnly(ops: { fnArray: number[]; argsArray: unknown[][] }, v
   for (let i = 0; i < ops.fnArray.length; i++) {
     const f = ops.fnArray[i], a = ops.argsArray[i] as number[];
     switch (f) {
-      case OPS.setStrokeRGBColor: col = [a[0], a[1], a[2]]; break;
-      case OPS.setStrokeGray: col = [a[0], a[0], a[0]]; break;
+      case OPS.setStrokeRGBColor: col = normalizeColor([a[0], a[1], a[2]]); break;
+      case OPS.setStrokeGray: col = normalizeColor([a[0], a[0], a[0]]); break;
       case OPS.setLineWidth: w = a[0]; break;
       case OPS.moveTo: fl(); addPt(a[0], a[1]); break;
       case OPS.lineTo: addPt(a[0], a[1]); break;

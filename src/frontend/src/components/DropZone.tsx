@@ -3,10 +3,11 @@ import { useLanguage } from '../i18n';
 
 interface Props {
   onFile: (file: File) => void;
+  onMultiple?: () => void;
   disabled?: boolean;
 }
 
-export default function DropZone({ onFile, disabled }: Props) {
+export default function DropZone({ onFile, onMultiple, disabled }: Props) {
   const [over, setOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useLanguage();
@@ -28,7 +29,9 @@ export default function DropZone({ onFile, disabled }: Props) {
       onDragLeave={() => setOver(false)}
       onDrop={e => {
         e.preventDefault(); setOver(false);
-        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        const files = e.dataTransfer.files;
+        if (files.length > 1 && onMultiple) { onMultiple(); return; }
+        if (files.length) handleFile(files[0]);
       }}
     >
       {/* Animated ECG trace background — CSS GPU-accelerated */}
@@ -62,8 +65,14 @@ export default function DropZone({ onFile, disabled }: Props) {
         ref={inputRef}
         type="file"
         accept=".pdf,.PDF"
+        multiple
         className="hidden"
-        onChange={e => e.target.files?.length && handleFile(e.target.files[0])}
+        onChange={e => {
+          const files = e.target.files;
+          if (!files?.length) return;
+          if (files.length > 1 && onMultiple) { onMultiple(); e.target.value = ''; return; }
+          handleFile(files[0]);
+        }}
       />
     </div>
   );
