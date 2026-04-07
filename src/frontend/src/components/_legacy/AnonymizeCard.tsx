@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
-import { useLanguage } from '../i18n';
-import type { TranslationKey } from '../i18n';
-import { anonymizePdf, extractTextFromPdf, type AnonMode } from '../lib/pdf-anonymize';
-import { anonymizeXml } from '../lib/_legacy/xml-anonymize';
+import { useLanguage } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
+import { anonymizePdf, extractTextFromPdf, type AnonMode } from '../../lib/pdf-anonymize';
+import { anonymizeXml } from '../../lib/_legacy/xml-anonymize';
 
 type CardState = 'idle' | 'loading' | 'done' | 'error';
 

@@ -1,7 +1,7 @@
 const translations = {
   fr: {
     // Header
-    'app.title': 'Extracteur ECG',
+    'app.title': 'ECG mind',
     'app.subtitle': 'Extraction du signal & conversion en formats standards',
 
     // Steps
@@ -60,12 +60,23 @@ const translations = {
     'dl.hdf5.desc': 'Hierarchical Data Format v5 — Format binaire haute performance. Utilisé par la NASA, le CERN, et en deep learning.',
     'dl.webp.desc': 'Image 4K (3840×2160) avec grille ECG standard, pulse de calibration 1mV/200ms et labels.',
     'dl.hl7.desc': 'HL7 Annotated ECG (aECG) XML — Format FDA pour la soumission réglementaire. Compatible avec les systèmes HL7 v3.',
+    'dl.pdfvec.desc': 'PDF vectoriel — Permet de reconstruire un PDF à partir d\'un fichier XML, ou de récupérer le PDF d\'origine anonymisé.',
+    'dl.image.desc': 'Image — Export du tracé ECG sous forme d\'image (format à déterminer).',
     'dl.badge.std': 'Standard',
     'dl.badge.physionet': 'PhysioNet',
     'dl.badge.medical': 'Médical',
     'dl.badge.scientific': 'Scientifique',
     'dl.badge.image': 'Image',
     'dl.badge.fda': 'FDA/HL7',
+    'dl.badge.wip': 'En dev',
+    'fmt.wip.title': 'En cours de développement',
+    'fmt.wip.body': 'Cette fonctionnalité n\'est pas encore disponible. Elle sera ajoutée dans une prochaine version.',
+    'fmt.wip.close': 'Fermer',
+    'image.rendering': 'Génération de l\'image ECG...',
+    'image.error': 'Erreur de rendu',
+    'image.mode.label': 'Format de rendu',
+    'image.mode.original': 'Original',
+    'image.mode.doubled': 'Doublé (2× le signal)',
 
     // Info card
     'info.principle.title': 'Principe',
@@ -102,7 +113,7 @@ const translations = {
     'anon.error': 'Erreur',
 
     // Report extraction issue
-    'report.btn': 'Signaler',
+    'report.btn': 'Signaler un dysfonctionnement',
     'report.title': 'Signaler une extraction incorrecte',
     'report.body': 'Pour améliorer l\'algorithme d\'extraction, nous avons besoin du PDF source. Le fichier sera anonymisé (toutes les données patient supprimées) avant l\'envoi au serveur.',
     'report.confirm': 'Anonymiser et envoyer',
@@ -121,7 +132,7 @@ const translations = {
   },
   en: {
     // Header
-    'app.title': 'ECG Extractor',
+    'app.title': 'ECG mind',
     'app.subtitle': 'Signal extraction & standard format conversion',
 
     // Steps
@@ -180,12 +191,23 @@ const translations = {
     'dl.hdf5.desc': 'Hierarchical Data Format v5 — High-performance binary format. Used by NASA, CERN, and in deep learning.',
     'dl.webp.desc': '4K image (3840×2160) with standard ECG grid, 1mV/200ms calibration pulse and labels.',
     'dl.hl7.desc': 'HL7 Annotated ECG (aECG) XML — FDA format for regulatory submission. Compatible with HL7 v3 systems.',
+    'dl.pdfvec.desc': 'Vectorized PDF — Rebuild a PDF from an XML file, or recover the original PDF anonymized.',
+    'dl.image.desc': 'Image — Export the ECG trace as an image (format to be determined).',
     'dl.badge.std': 'Standard',
     'dl.badge.physionet': 'PhysioNet',
     'dl.badge.medical': 'Medical',
     'dl.badge.scientific': 'Scientific',
     'dl.badge.image': 'Image',
     'dl.badge.fda': 'FDA/HL7',
+    'dl.badge.wip': 'WIP',
+    'fmt.wip.title': 'Under development',
+    'fmt.wip.body': 'This feature is not available yet. It will be added in a future release.',
+    'fmt.wip.close': 'Close',
+    'image.rendering': 'Rendering ECG image...',
+    'image.error': 'Render error',
+    'image.mode.label': 'Render format',
+    'image.mode.original': 'Original',
+    'image.mode.doubled': 'Doubled (2× signal)',
 
     // Info card
     'info.principle.title': 'Principle',
@@ -222,7 +244,7 @@ const translations = {
     'anon.error': 'Error',
 
     // Report extraction issue
-    'report.btn': 'Report',
+    'report.btn': 'Report a malfunction',
     'report.title': 'Report incorrect extraction',
     'report.body': 'To improve the extraction algorithm, we need the source PDF. The file will be anonymized (all patient data removed) before being sent to the server.',
     'report.confirm': 'Anonymize & send',

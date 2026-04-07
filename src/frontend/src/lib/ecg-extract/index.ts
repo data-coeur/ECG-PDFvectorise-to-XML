@@ -72,9 +72,10 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   // Step 7: Assign each trace to a lead name
   const assigned = assign(traces, labels, layout, profile);
 
-  // Step 8: Find exact 0mV baselines from calibration pulses
+  // Step 8: Find exact 0mV baselines from calibration pulses (best-effort).
+  // Some PDF formats don't have detectable calibration pulses — in that case
+  // findBaselineForTrace falls back to using the trace's vertical center.
   const calBaselines = extractCalibrationBaselines(allPolylines, scale, layout, profile);
-  if (!calBaselines.length) throw new Error('GRID_NOT_DETECTED');
 
   // Step 9: Convert each trace from PDF coordinates to millivolts
   return {
@@ -84,7 +85,10 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
     page_size: { width: Math.round(vp.width), height: Math.round(vp.height) },
     scale: { mm_per_s: 25, mm_per_mV: 10, pts_per_mm: Math.round(scale.pmm * 100) / 100 },
     grid,
-    channels: assigned.map(c => {
+    // Exclude rhythm strip channels (e.g. "II_rhythm" from grid_4x3 layouts).
+    // The Python renderer generates its own rhythm strip from the standard lead II.
+    // Their longer duration would otherwise inflate the resample target and stretch all leads.
+    channels: assigned.filter(c => !/_rhythm$/i.test(c.name)).map(c => {
       const baseline = findBaselineForTrace(c.pts, calBaselines, layout);
       const signal = toPhysical(c.pts, scale, layout, baseline);
       let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;

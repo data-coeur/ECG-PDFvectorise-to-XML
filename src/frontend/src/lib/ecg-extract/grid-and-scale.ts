@@ -116,11 +116,17 @@ export function extractCalibrationBaselines(P: Polyline[], sc: ScaleInfo, lay: L
   return baselines;
 }
 
-// Match a trace to its nearest calibration baseline
+// Match a trace to its nearest calibration baseline.
+// Fallback: if no calibration baselines were detected (some PDF formats don't have
+// detectable calibration pulses), use the trace's vertical center as baseline.
 export function findBaselineForTrace(pts: Point[], calBaselines: number[], lay: Layout): number {
   const vK = lay.tA === 'x' ? 'y' : 'x';
   const vs = pts.map(p => p[vK]);
   const vCenter = (Math.min(...vs) + Math.max(...vs)) / 2;
+
+  // No calibration pulses detected → fallback to trace center as baseline.
+  // The Python renderer applies its own DC-offset removal so this is just an estimate.
+  if (calBaselines.length === 0) return vCenter;
 
   let nearest = calBaselines[0], minDist = Math.abs(vCenter - calBaselines[0]);
   for (let i = 1; i < calBaselines.length; i++) {

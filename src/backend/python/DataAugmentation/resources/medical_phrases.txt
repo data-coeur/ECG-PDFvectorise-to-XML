@@ -1,0 +1,499 @@
+Normal sinus rhythm
+Sinus bradycardia
+Sinus tachycardia
+Atrial fibrillation
+Atrial flutter
+Rythme sinusal normal
+Rythme regulier
+Rythme irregulier
+Tachycardie sinusale
+Bradycardie sinusale
+Tachycardie supraventriculaire
+Fibrillation auriculaire
+Flutter auriculaire
+Extrasystoles auriculaires
+Extrasystoles ventriculaires
+ESV isolees
+ESA rares
+Rythme jonctionnel
+Rythme d'echappement
+Tachycardie ventriculaire
+HR=72bpm
+HR=65bpm
+HR=80bpm
+HR=55bpm
+HR=90bpm
+HR=100bpm
+HR=110bpm
+HR=48bpm
+HR=120bpm
+FC=72/min
+FC=65/min
+FC=80/min
+FC=55/min
+FC=90/min
+FC=100/min
+Heart rate 72 bpm
+Heart rate 65 bpm
+Heart rate 80 bpm
+Ventricular rate 90
+Rate 55 bpm
+PR=160ms
+PR=200ms
+PR=180ms
+PR=220ms
+PR=140ms
+QRS=90ms
+QRS=80ms
+QRS=100ms
+QRS=120ms
+QRS=140ms
+QT=420ms
+QT=380ms
+QT=440ms
+QT=460ms
+QT=500ms
+QTc=440ms
+QTc=450ms
+QTc=460ms
+QTc=480ms
+QTc=500ms
+RR=700ms
+RR=800ms
+RR=900ms
+RR=600ms
+RR=1000ms
+RR=750ms
+Intervalle PR normal
+Intervalle QT allonge
+PR interval 160ms
+QRS duration 90ms
+QT interval 420ms
+QTc 450ms
+Axis normal
+Left axis deviation
+Right axis deviation
+Axe normal
+Deviation axiale gauche
+Deviation axiale droite
+Axe indetermine
+Normal morphology
+Poor R wave progression
+Low voltage
+Voltage criteria met
+Mauvaise progression de l'onde R
+Bas voltage
+Criteres de voltage LVH
+Hypertrophie ventriculaire gauche
+Hypertrophie ventriculaire droite
+Hypertrophie auriculaire gauche
+Hypertrophie auriculaire droite
+No acute changes
+Normal ECG
+ECG normal
+Abnormal ECG
+ECG anormal
+Within normal limits
+Limites normales
+Consider clinical correlation
+A correler cliniquement
+Nonspecific changes
+Modifications non specifiques
+Anomalies non specifiques
+Artifact present
+Artefact present
+Technically adequate
+Qualite technique correcte
+Poor baseline
+Ligne de base instable
+Muscle artifact
+Artefact musculaire
+Tremble de base
+Parasitage
+No ST elevation
+Pas de sus-decalage ST
+ST depression
+Sous-decalage ST
+ST elevation V1-V4
+Sus-decalage ST V1-V4
+Sus-decalage ST inferieur
+Sous-decalage ST lateral
+T wave inversion
+Ondes T negatives
+Ondes T negatives en V1-V3
+Inversion onde T lateral
+Q waves present
+Ondes Q de necrose
+Onde Q en III aVF
+Acute MI pattern
+SCA ST+
+Infarctus aigu
+Old infarct
+Sequelle d'infarctus
+Infarctus ancien
+Ischemic changes
+Ischemie sous-epicardique
+Ischemie sous-endocardique
+Lesion sous-epicardique
+Repolarization abnormality
+Anomalie de repolarisation
+Repolarisation precoce
+Repolarisation non specifique
+Trouble de repolarisation
+Syndrome de Brugada?
+Brugada pattern
+First degree AV block
+BAV 1er degre
+BAV I
+2nd degree AV block
+BAV 2eme degre
+BAV II Mobitz 1
+BAV II Mobitz 2
+BAV 2:1
+3rd degree AV block
+BAV complet
+BAV III
+Bundle branch block
+Bloc de branche droit
+Bloc de branche gauche
+BBD complet
+BBG complet
+BBD incomplet
+BBG incomplet
+Left BBB
+Right BBB
+LBBB
+RBBB
+Hemibloc anterieur gauche
+HBAG
+Bloc bifasciculaire
+Prolonged QT
+QT long
+Short PR
+PR court
+Delta wave
+Onde delta
+Pre-excitation
+Wolff-Parkinson-White
+WPW
+Syndrome de WPW
+25mm/s 10mm/mV
+25mm/s
+50mm/s
+10mm/mV
+20mm/mV
+5mm/mV
+Speed 25mm/s
+Gain 10mm/mV
+Vitesse 25mm/s
+Etalonnage 10mm/mV
+Filter 40Hz
+Filtre 0.05-150Hz
+Filtre 40Hz
+Baseline wander
+Lead misplacement
+Inversion d'electrodes
+Poor contact
+Mauvais contact
+Electrodes bien placees
+Calibration 1mV
+Dr. Martin
+Dr. Dupont
+Dr. Johnson
+Dr. Smith
+Dr. Bernard
+Dr. Lefevre
+Dr. Moreau
+Dr. Garcia
+Dr. Petit
+Dr. Thomas
+Dr. Lambert
+Dr. Robert
+Dr. Dubois
+Dr. Simon
+Dr. Laurent
+MD
+Cardiologue
+Cardiologist
+Attending
+Vu par Dr Martin
+Vu par Dr Dupont
+Vu par Dr Johnson
+Vu le 15/03
+Vu le 22/01
+Reviewed by
+Interpreted by
+Final report
+Rapport final
+Lu et valide
+Valide par
+A controler
+Urgent
+Urgence
+A suivre
+A refaire
+A comparer
+Controle a 3 mois
+Controle a 6 mois
+Suivi necessaire
+RAS
+Rien a signaler
+Pas de modification
+Pas d'anomalie aigue
+Stable par rapport au precedent
+Comparaison avec ECG du 12/01
+Evolution favorable
+Amelioration
+Aggravation
+ECG de reference
+16/08/2024
+15/03/2025
+22/01/2024
+08/12/2023
+03/07/2024
+12/11/2024
+28/02/2025
+08:30
+14:45
+10:15
+23:30
+06:00
+Morning
+Afternoon
+Night
+Matin
+Apres-midi
+Nuit
+Routine ECG
+ECG de routine
+ECG systematique
+ECG pre-operatoire
+ECG de controle
+ECG de surveillance
+Serial ECG
+ECG serie
+Comparison available
+ECG anterieur disponible
+Previous ECG
+ECG precedent
+Follow-up recommended
+Suivi recommande
+Patient ID
+MRN
+DOB
+Age 65
+Age 72
+Age 45
+Age 58
+Age 81
+Age 33
+Male
+Female
+Homme
+Femme
+Lead II rhythm strip
+All leads adequate
+12-lead ECG
+ECG 12 derivations
+Rhythm strip
+Bande de rythme
+V1-V6 adequate
+Limb leads
+Precordial leads
+Derivations precordiales
+Derivations peripheriques
+Douleur thoracique
+Dyspnee
+Palpitations
+Syncope
+Malaise
+Lipothymie
+Bilan pre-op
+Bilan d'entree
+Screening
+Depistage
+Holter a prevoir
+Holter 24h necessaire
+EEF a discuter
+Coronarographie a discuter
+Echographie cardiaque
+ETT normale
+ETT a faire
+FEVG=60%
+FEVG=55%
+FEVG=45%
+FEVG=35%
+FEVG conservee
+FEVG alteree
+Troponine negative
+Troponine positive
+Tropo negative
+Tropo+
+BNP normal
+BNP eleve
+K+=4.2
+K+=3.8
+K+=5.1
+K+=3.2
+Ca++=2.3
+Mg++=0.8
+Na+=140
+Creat=85
+DFG=65
+Hb=12.5
+Pace maker
+Stimulateur cardiaque
+PM bicameriste
+PM VVI
+PM DDD
+DAI
+Defibrillateur
+Resynchronisation
+CRT-D
+CRT-P
+Sonde auriculaire OK
+Sonde ventriculaire OK
+Sensing normal
+Capture normale
+Pacing threshold OK
+Seuil de stimulation normal
+Electrode deplacee?
+Dysfonction de sonde?
+Pas de signe de dysfonction
+Anti-arythmique
+Beta-bloquant
+Amiodarone
+Flecainide
+Sotalol
+Digoxine
+Anticoagulant
+AVK
+AOD
+Rivaroxaban
+Apixaban
+Dabigatran
+Aspirine
+Clopidogrel
+Ticagrelor
+Double anti-agregation
+Statine
+IEC
+ARA2
+Diuretique
+Furosemide
+Pas de pacemaker
+Rythme propre
+Stimulation atriale
+Stimulation ventriculaire
+Stimulation AV sequentielle
+ESV monomorphes
+ESV polymorphes
+Doublet ESV
+Triplet ESV
+TV non soutenue
+TVNS
+TV soutenue
+Torsade de pointes
+FV
+Fibrillation ventriculaire
+Asystolie
+DEM
+AESP
+Onde U
+Onde epsilon
+Onde J
+Alternance electrique
+Bas voltage diffus
+Microvoltage
+Effet digitalique
+Impregnation digitalique
+Hyperkaliemie
+Hypokaliemie
+Hypercalcemie
+Hypocalcemie
+Pericardite
+Sus-decalage diffus
+Sous-decalage en PQ
+Tamponnade
+Embolie pulmonaire
+S1Q3T3
+Coeur pulmonaire aigu
+Surcharge droite
+Bloc de branche droit aigu
+Strain ventriculaire droit
+Sokolow positif
+Sokolow=35mm
+Cornell positif
+Lewis positif
+Indice de Romhilt-Estes
+Score de Sgarbossa
+STEMI anterieur
+STEMI inferieur
+STEMI lateral
+STEMI posterieur
+NSTEMI
+Angor instable
+Syndrome coronarien
+Anomalie du segment ST
+Anomalie onde T
+Dextrocardie
+Situs inversus
+QRS fragmente
+Onde delta en V2-V3
+Kent lateral gauche
+Kent postero-septal
+Voie accessoire
+TJ=200ms
+Micro-alternance onde T
+Test d'effort positif
+Test d'effort negatif
+Test d'effort non contributif
+Epreuve sous-maximale
+VO2max=25ml/kg/min
+Seuil ischem 100W
+Sous-decalage a l'effort
+Arythmie a l'effort
+Bonne tolerance hemodynamique
+Reponse chronotrope adequate
+Incompetence chronotrope
+Conclusion normale
+A surveiller
+Pas de modification significative
+Interpretation prudente
+Contexte clinique a preciser
+Correler a la clinique
+ECG a refaire sous 48h
+Controle ECG a J+1
+Avis cardiologique urgent
+Avis cardiologique non urgent
+Transfert USIC
+Hospitalisation
+Passage aux urgences
+Bilan biologique en cours
+Ionogramme a faire
+ECG de sortie
+ECG d'admission
+Entree en cardiologie
+Sortie autorisee
+Retour a domicile
+Patient asymptomatique
+Patient symptomatique
+Douleur retrosternale
+Douleur precordiale
+Irradiation bras gauche
+Irradiation machoire
+Sudation profuse
+Nausees
+Sensation de mort imminente
+Arret cardio-respiratoire
+Massage cardiaque
+Choc electrique externe
+CEE 200J
+Reanimation cardio-pulmonaire
+Intubation
+Ventilation mecanique
+Amines vasopressives
+Noradrenaline
+Dobutamine
+ETO a faire
+Echographie trans-oesophagienne

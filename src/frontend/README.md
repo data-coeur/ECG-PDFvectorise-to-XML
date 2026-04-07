@@ -210,25 +210,46 @@ Zone de drag-and-drop et bouton de sélection de fichier. N'accepte que les `.pd
 
 ---
 
-### `ECGChannels.tsx` — Rendu du signal sur grille ECG
+### `ECGImageView.tsx` — Affichage du signal (rendu Python)
 
-Dessine chaque dérivation sur un canvas HTML avec une grille ECG clinique standard (fond rose, lignes 1mm et 5mm).
+**Composant principal d'affichage du signal extrait.** Remplace l'ancien `ECGChannels.tsx` (canvas custom) qui souffrait de bugs récurrents de positionnement de baseline et d'alignement de grille.
 
-- **Baseline** (0mV) au centre du canvas
-- **Grille** ancrée à la baseline (les lignes majeures 5mm = 0.5mV tombent correctement)
-- **Signal** dessiné à sa position mV absolue : `y = baseY - sample * pxPerMv`
-- **Barre de calibration** 1mV en bas à droite
-- Échelle uniforme pour toutes les dérivations : `pxPerMm = 1400 / (durée × 25)`
+**Fonctionnement** :
+1. Au montage du composant (et à chaque changement de `data`), envoie l'objet `ECGData` au backend via `POST /api/ecg/render-image`
+2. Le backend génère une image WebP via un sous-processus Python (matplotlib + ecg_generator)
+3. Reçoit le blob, crée une URL via `URL.createObjectURL` et l'affiche dans une `<img>`
+4. Affiche un spinner pendant le rendu (1-3 secondes typiquement)
+5. Gère les erreurs (réseau, Python crash) avec un message clair
+6. Cleanup l'URL blob lors du démontage
+
+**Avantages vs l'ancien canvas custom** :
+- Rendu standard A4 papier ECG (matplotlib éprouvé, layout 6x2+1)
+- Plus de bugs de baseline / phase de grille / décalage vertical
+- Bonus : valide implicitement la conversion vers le format XML interne
+
+**Trade-off** : latence de 1-3s à chaque extraction (vs affichage instantané du canvas).
+
+### `ECGChannels.tsx` — [LEGACY] Canvas custom
+
+Ancien composant qui dessinait le signal sur un canvas HTML avec grille maison. Conservé uniquement pour le mode développeur (`DevModeView`) où il sert encore à la comparaison côte-à-côte avec le PDF original. Plus utilisé dans le flux principal.
 
 ---
 
-### `FormatCards.tsx` — Cartes de conversion
+### `FormatCards.tsx` — Cartes de conversion / téléchargement
 
-Affiche une carte par format de sortie (EDF+, WFDB, DICOM, HDF5, WebP, HL7 aECG). Chaque carte :
-1. Affiche le nom, un badge (Standard/Médical/Image), et une description
-2. Au clic : envoie le JSON ECG au backend `POST /api/ecg/convert/:format`
-3. Affiche un spinner pendant la conversion
-4. Propose le téléchargement du fichier généré via `GET /api/ecg/data/:filename`
+Affiche les formats de sortie disponibles. **Actuellement 3 cartes** :
+
+| Carte | État | Route appelée | Sortie |
+|-------|------|---------------|--------|
+| **HL7 aECG XML** | actif | `POST /api/ecg/convert/hl7aecg` | JSON → fichier `.xml` téléchargeable |
+| **PDF Vectoriel** | en dev (popup) | — | — |
+| **Image** | actif | `POST /api/ecg/render-image` | binaire WebP direct → blob URL téléchargeable |
+
+Le composant gère deux types de flow :
+- **`json-format`** : reçoit du JSON, télécharge via `/api/ecg/data/:filename`
+- **`binary-image`** : reçoit du WebP en binaire, crée un blob URL local
+
+Les cartes "en développement" affichent une popup modale "En cours de développement" au clic.
 
 ---
 

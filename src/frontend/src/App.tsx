@@ -9,11 +9,8 @@ import LanguageToggle from './components/LanguageToggle';
 import StepIndicator, { type Step } from './components/StepIndicator';
 import DropZone from './components/DropZone';
 import StatusBar from './components/StatusBar';
-import MetadataGrid from './components/MetadataGrid';
-import ECGChannels from './components/ECGChannels';
+import ECGImageView from './components/ECGImageView';
 import FormatCards from './components/FormatCards';
-import AnonymizeCard from './components/AnonymizeCard';
-import JsonViewer from './components/JsonViewer';
 import InfoCard from './components/InfoCard';
 import DevModeView from './components/DevModeView';
 import ReportModal from './components/ReportModal';
@@ -22,12 +19,10 @@ export default function App() {
   const { t } = useLanguage();
   const [ecgData, setEcgData] = useState<ECGData | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [xmlContent, setXmlContent] = useState<string | null>(null);
   const [status, setStatus] = useState({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
   const [converting, setConverting] = useState(false);
   const [hasDownload, setHasDownload] = useState(false);
   const [devMode, setDevMode] = useState(false);
-  const [showRawJson, setShowRawJson] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
@@ -47,11 +42,9 @@ export default function App() {
     setStatus({ msg: t('status.extracting'), type: '', loading: true });
     setEcgData(null);
     setPdfFile(file);
-    setXmlContent(null);
     setConverting(false);
     setHasDownload(false);
     setDevMode(false);
-    setShowRawJson(false);
     try {
       let result: ECGData | null;
       result = await extractFromPdf(file);
@@ -75,21 +68,11 @@ export default function App() {
   const handleReset = useCallback(() => {
     setEcgData(null);
     setPdfFile(null);
-    setXmlContent(null);
     setStatus({ msg: '', type: '' as '' | 'ok' | 'err', loading: false });
     setConverting(false);
     setHasDownload(false);
     setDevMode(false);
-    setShowRawJson(false);
   }, []);
-
-  const handleDownloadJson = useCallback(() => {
-    if (!ecgData) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(ecgData, null, 2)], { type: 'application/json' }));
-    a.download = `ecg_${Date.now()}.json`;
-    a.click();
-  }, [ecgData]);
 
   return (
     <div className="min-h-screen">
@@ -159,26 +142,6 @@ export default function App() {
                       {t('report.btn' as TranslationKey)}
                     </button>
                   )}
-                  {ecgData && (
-                    <>
-                      <button
-                        className="rounded-lg border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/40 hover:text-primary"
-                        onClick={handleDownloadJson}
-                      >
-                        ↓ {t('btn.json')}
-                      </button>
-                      <button
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
-                          showRawJson
-                            ? 'border-primary/40 bg-primary/10 text-primary'
-                            : 'border-slate-200 bg-white/60 text-slate-600 hover:border-primary/40 hover:text-primary'
-                        }`}
-                        onClick={() => setShowRawJson(v => !v)}
-                      >
-                        { showRawJson ? '✕' : '{ }' } {t('btn.rawJson')}
-                      </button>
-                    </>
-                  )}
                 </div>
               )}
             </div>
@@ -198,16 +161,8 @@ export default function App() {
             <div className="mt-5">
               <FormatCards ecgData={ecgData} disabled={status.loading} onConvertStart={() => setConverting(true)} onConvertDone={() => setHasDownload(true)} />
             </div>
-            <div className="mt-5">
-              <AnonymizeCard pdfFile={pdfFile} xmlContent={xmlContent} disabled={status.loading} />
-            </div>
             <div className="mt-5 glass-card p-5">
-              <h2 className="mb-4 text-sm font-semibold text-slate-600">{t('results.title')}</h2>
-              <MetadataGrid data={ecgData} />
-              <div className="mt-4">
-                <ECGChannels channels={ecgData.channels} />
-              </div>
-              {showRawJson && <JsonViewer data={ecgData} />}
+              <ECGImageView data={ecgData} />
             </div>
           </>
         )}

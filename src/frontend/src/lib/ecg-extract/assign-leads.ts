@@ -54,15 +54,18 @@ export function assign(tr: Polyline[], lb: Label[], lay: Layout, profile: Manufa
   return ch;
 }
 
-// 4x3 grid: 4 columns (I/aVR/V1/V4, II/aVL/V2/V5, III/aVF/V3/V6) x 3 rows + optional rhythm strip
-function assignGrid4x3(tr: Polyline[], lb: Label[], vK: string, profile: ManufacturerProfile): AssignResult[] {
+// 4x3 grid: 4 columns (I/II/III, aVR/aVL/aVF, V1/V2/V3, V4/V5/V6) × 3 rows + rhythm strip.
+// Uses positional assignment via profile.leads.gridOrder. Label-based matching was tried
+// before but was unreliable (greedy nearest-neighbor produced duplicate / wrong assignments
+// when label positions in the PDF didn't perfectly match their traces).
+function assignGrid4x3(tr: Polyline[], _lb: Label[], _vK: string, profile: ManufacturerProfile): AssignResult[] {
   const widths = tr.map(t => t.bb!.dx);
   const medWidth = [...widths].sort((a, b) => a - b)[Math.floor(widths.length / 2)];
   const rhythmThreshold = medWidth * profile.leads.rhythmStripWidthRatio;
   const rhythm = tr.filter(t => t.bb!.dx > rhythmThreshold);
   const grid = tr.filter(t => t.bb!.dx <= rhythmThreshold);
 
-  // Cluster grid traces into columns by cx
+  // Cluster grid traces into columns by cx (left-to-right)
   const cxSorted = [...grid].sort((a, b) => a.bb!.cx - b.bb!.cx);
   const colGroups: Polyline[][] = [[]];
   for (const t of cxSorted) {
@@ -74,36 +77,25 @@ function assignGrid4x3(tr: Polyline[], lb: Label[], vK: string, profile: Manufac
     }
   }
 
+  // Sort each column top-to-bottom
   for (const col of colGroups) col.sort((a, b) => a.bb!.cy - b.bb!.cy);
 
   const gridOrder = profile.leads.gridOrder;
-
   const ch: AssignResult[] = [];
 
-  if (lb.length >= 12) {
-    for (const t of [...grid, ...rhythm]) {
-      let bestLabel: Label | null = null, bestDist = Infinity;
-      for (const l of lb) {
-        const dx = l.x - t.bb!.x0;
-        const dy = l.y - t.bb!.y0;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < bestDist) { bestDist = dist; bestLabel = l; }
-      }
-      const usedNames = ch.map(c => c.name);
-      const name = bestLabel ? (usedNames.includes(bestLabel.text) ? bestLabel.text + '_rhythm' : bestLabel.text) : `L${ch.length + 1}`;
-      ch.push({ name, pts: t.pts, baselineY: bestLabel?.[vK as keyof Label] as number | undefined });
-    }
-  } else {
-    for (let ci = 0; ci < colGroups.length && ci < gridOrder.length; ci++) {
-      for (let ri = 0; ri < colGroups[ci].length && ri < gridOrder[ci].length; ri++) {
-        ch.push({ name: gridOrder[ci][ri], pts: colGroups[ci][ri].pts });
-      }
-    }
-    for (const t of rhythm) {
-      ch.push({ name: 'II_rhythm', pts: t.pts });
+  // Positional assignment: column index → group of leads, row index → lead within group
+  for (let ci = 0; ci < colGroups.length && ci < gridOrder.length; ci++) {
+    for (let ri = 0; ri < colGroups[ci].length && ri < gridOrder[ci].length; ri++) {
+      ch.push({ name: gridOrder[ci][ri], pts: colGroups[ci][ri].pts });
     }
   }
 
+  // Rhythm strip(s): always named after the standard rhythm lead (II)
+  for (const t of rhythm) {
+    ch.push({ name: 'II_rhythm', pts: t.pts });
+  }
+
+  // Sort by standard 12-lead order (rhythm strips at the end)
   ch.sort((a, b) => {
     const na = a.name.replace('_rhythm', ''), nb = b.name.replace('_rhythm', '');
     const ia = LEAD_NAMES.indexOf(na), ib = LEAD_NAMES.indexOf(nb);

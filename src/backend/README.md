@@ -2,393 +2,292 @@
 
 ## Contexte
 
-Le backend est un serveur **Node.js / Express** écrit en TypeScript. Son rôle unique : recevoir le signal ECG extrait par le frontend (valeurs en mV par dérivation) et le convertir en fichiers aux formats médicaux standards (EDF+, WFDB, DICOM, HDF5, WebP, HL7 aECG).
+Le backend est un serveur **Node.js / Express** (TypeScript) qui reçoit le signal ECG extrait par le frontend et fournit deux fonctionnalités :
 
-Le backend ne fait **aucune extraction de signal** — c'est le frontend qui parse le PDF vectorisé et extrait les courbes. Le backend reçoit le résultat (un JSON avec les échantillons) et produit des fichiers.
+1. **Conversion en HL7 aECG XML** — format FDA/HL7 v3 pour la soumission réglementaire
+2. **Rendu en image ECG standardisée** — appelle un sous-processus Python (matplotlib + ecg_generator) qui produit une image WebP papier ECG (A4, layout 6x2+1, grille millimétrique). Cette image remplace la grille canvas custom du frontend (plus de bugs d'alignement).
+
+Le backend ne fait **aucune extraction de signal** — c'est le frontend qui parse le PDF vectorisé. Le backend reçoit les échantillons en mV et produit les fichiers de sortie.
 
 ## Architecture
 
 ```
 src/backend/
 ├── src/
-│   ├── server.ts              # Point d'entrée — lance Express sur le port 3000
+│   ├── server.ts                       # Express, port 3000
 │   ├── routes/
-│   │   └── ecg.ts             # Routeur API — toutes les routes /api/ecg/*
-│   └── writers/
-│       ├── edf.ts             # Writer EDF+ (European Data Format)
-│       ├── wfdb.ts            # Writer WFDB (PhysioNet)
-│       ├── dicom.ts           # Writer DICOM Waveform
-│       ├── hdf5.ts            # Writer HDF5 (simplifié)
-│       ├── webp.ts            # Writer WebP (image 4K)
-│       └── hl7aecg.ts         # Writer HL7 aECG XML (format FDA)
+│   │   └── ecg.ts                      # Routes /api/ecg/*
+│   ├── writers/
+│   │   ├── hl7aecg.ts                  # HL7 aECG XML (téléchargement utilisateur)
+│   │   └── musexml.ts                  # GE MUSE RestingECG XML (interne, pour le rendu Python)
+│   └── _legacy/
+│       ├── README.md
+│       └── writers/                    # edf, wfdb, dicom, hdf5, webp (désactivés)
 ├── scripts/
-│   └── parse_xml_ecg.py       # [LEGACY] Parser XML via ecg-datakit (désactivé)
-├── dist/                       # Code JS compilé (généré par `tsc`, ne pas modifier)
-├── node_modules/               # Dépendances (généré par `npm install`, ne pas modifier)
-├── package.json                # Dépendances et scripts npm
-└── tsconfig.json               # Configuration TypeScript
+│   ├── render_ecg_image.py             # Wrapper CLI Python — appelle ecgmind_raw2paper
+│   └── parse_xml_ecg.py                # [LEGACY] Parser XML désactivé
+├── python/                             # Packages Python vendorisés (PYTHONPATH=/app/python)
+│   ├── ecg_generator/                  # Pipeline de rendu (depuis ECGPerturb)
+│   ├── ecgmind_raw2paper/              # Wrapper de configuration (depuis ECGMind_Raw2Paper)
+│   ├── shared/                         # Utilitaires partagés (depuis ECGPerturb)
+│   └── DataAugmentation/               # Module minimal (multilingual_medical seulement)
+├── dist/                               # Code JS compilé (tsc)
+├── node_modules/
+├── package.json
+└── tsconfig.json
 ```
 
 ### Build et déploiement
 
-Le backend est compilé et exécuté dans un conteneur Docker (`ecg-dev-web`, port 3000).
-Le Dockerfile utilise un build multi-étapes :
+Conteneur Docker `ecg-dev-web`, port 3000. Multi-étapes :
 
-1. **Stage 1** : Build du frontend React (Vite)
-2. **Stage 2** : Build du backend TypeScript (`tsc` → `dist/`)
-3. **Stage 3** : Image de production Node.js Alpine — copie `dist/`, `node_modules/`, `frontend-dist/`
+1. **Stage 1** : Build frontend React/Vite
+2. **Stage 2** : Build backend TypeScript (`tsc` → `dist/`)
+3. **Stage 3** : Runtime **node:18-slim** (Debian) avec Python 3 + matplotlib + opencv
 
-Pour redéployer après modification :
 ```bash
 docker compose build --no-cache web && docker compose up -d web
 ```
+
+Note importante : on est passé de **Alpine** à **Debian slim** car Alpine ne fournit pas de wheels pré-compilés pour `opencv-python` (compilation lourde nécessitant gcc + cmake).
 
 ---
 
 ## Routes API
 
-Toutes les routes sont montées sous `/api/ecg/`.
+Toutes sous `/api/ecg/`.
 
 ### `POST /api/ecg/convert/:format`
 
-Convertit le signal ECG dans un format donné.
+Convertit le signal ECG en HL7 aECG XML.
 
-**Entrée** : JSON (`Content-Type: application/json`, limite 60 Mo)
+**Entrée** : JSON `{ manufacturer, layout, channels: [{ name, samples, duration_s, sample_rate_hz }] }`
+**Paramètre URL** : `:format` — uniquement `hl7aecg` accepté
+**Sortie** : `{ success, base, files: { hl7aecg }, info }`
 
-```json
-{
-  "manufacturer": "GE MUSE",
-  "layout": "sequential_6x2",
-  "channels": [
-    {
-      "name": "I",
-      "samples": [0.012, 0.015, -0.003, ...],
-      "duration_s": 9.96,
-      "sample_rate_hz": 500
-    },
-    ...
-  ]
-}
-```
+Le fichier généré est téléchargeable via `GET /api/ecg/data/<filename>`.
 
-| Champ | Type | Description |
-|-------|------|-------------|
-| `manufacturer` | string | Fabricant détecté (pour métadonnées du fichier de sortie) |
-| `layout` | string | Layout détecté (`stacked_12x1`, `sequential_6x2`, `grid_4x3`) |
-| `channels[].name` | string | Nom de la dérivation (`I`, `II`, `V1`...) |
-| `channels[].samples` | number[] | Valeurs en **millivolts** (mV), relatives à la baseline (0mV) |
-| `channels[].duration_s` | number | Durée du tracé en secondes |
-| `channels[].sample_rate_hz` | number | Fréquence d'échantillonnage en Hz |
+### `POST /api/ecg/render-image`
 
-**Paramètre URL** : `:format` — un de : `edf`, `wfdb`, `dicom`, `hdf5`, `webp`, `hl7aecg`
+Génère une image ECG standardisée (matplotlib) à partir du signal.
 
-**Sortie** : JSON
+**Entrée** : JSON `{ channels: [...] }` (même format que `/convert`)
+**Sortie** : binaire `image/webp` directement dans le body de la réponse (pas via fichier statique)
 
-```json
-{
-  "success": true,
-  "base": "ecg_GE_MUSE_2026_04_03_08_30_00",
-  "files": { "edf": "ecg_GE_MUSE_2026_04_03_08_30_00.edf" },
-  "info": {
-    "manufacturer": "GE MUSE",
-    "layout": "sequential_6x2",
-    "channels": 12,
-    "sample_rate": 500,
-    "duration": 9.96
-  }
-}
-```
-
-Les fichiers générés sont téléchargeables via `GET /api/ecg/data/<filename>`.
+**Pipeline interne** :
+1. Resample des canaux à fréquence uniforme
+2. `writeMuseXml()` → écrit un fichier temporaire `_render_<timestamp>.xml` au format **GE MUSE RestingECG** (le format que le parser Python attend, base64 int16 little-endian µV)
+3. `execFile('python3', 'render_ecg_image.py', xml, image)` — sous-processus Python (timeout 30s)
+4. Lecture du fichier WebP, envoi en réponse
+5. Cleanup des fichiers temporaires (XML + image) dans le `finally`
 
 **Codes d'erreur** :
-- `400` : format invalide ou pas de canaux
-- `500` : erreur interne de conversion
-
----
+- `400` : pas de canaux dans la requête
+- `500` : Python a crashé, timeout, ou n'a produit aucun fichier
 
 ### `GET /api/ecg/data/:filename`
 
-Télécharge un fichier généré.
-
-**Entrée** : nom du fichier dans l'URL (ex: `/api/ecg/data/ecg_GE_MUSE_2026_04_03.edf`)
-
-**Sortie** : le fichier binaire en téléchargement (`Content-Disposition: attachment`)
-
-**Sécurité** : vérifie que le chemin résolu commence bien par `DATA_DIR` (protection path traversal).
-
-**Codes d'erreur** :
-- `403` : tentative de path traversal
-- `404` : fichier non trouvé
-
----
+Télécharge un fichier généré. Vérifie que le chemin résolu reste dans `DATA_DIR` (protection path traversal).
 
 ### `POST /api/ecg/report`
 
-Reçoit un PDF anonymisé pour signaler un problème d'extraction.
-
-**Entrée** : `multipart/form-data`
-
-| Champ | Type | Description |
-|-------|------|-------------|
-| `pdf` | File | Le PDF anonymisé (max 50 Mo, MIME `application/pdf` uniquement) |
-| `manufacturer` | string | Fabricant détecté |
-| `layout` | string | Layout détecté |
-| `channels` | string | Nombre de canaux |
-| `filename` | string | Nom du fichier source |
-
-**Sortie** : JSON `{ "success": true, "filename": "report_2026_04_03.pdf" }`
-
-**Effet secondaire** : si `GITHUB_TOKEN` est défini dans `.env`, poste un commentaire
-sur l'issue GitHub `data-coeur/ecg-pipeline#3` avec les métadonnées du signalement.
+Reçoit un PDF anonymisé pour signalement de bug. Multipart `pdf` (max 50 Mo, MIME `application/pdf`). Si `GITHUB_TOKEN` est défini, poste un commentaire sur l'issue GitHub `data-coeur/ecg-pipeline#3`.
 
 ---
 
-## Writers — Détail par format
+## Writers
 
-### `edf.ts` — EDF+ (European Data Format)
+### `hl7aecg.ts` — HL7 aECG XML (format FDA)
 
-| | |
-|---|---|
-| **Format** | Binaire, standard ouvert |
-| **Extension** | `.edf` |
-| **Lecteurs** | EDFbrowser, MATLAB, Python (pyedflib, mne) |
-| **Entrée** | `channels`, `resampled[][]`, `nSamples`, `sampleRate`, `duration`, `filename` |
-| **Sortie** | Fichier `.edf` sur disque |
-
-**Structure du fichier** :
-- Header global (256 octets) : version, patient, date, durée, nombre de canaux
-- Header par canal (256 octets × N) : nom, unité (mV), min/max physique et digital
-- Données : valeurs converties en int16 (−32768 à +32767), proportionnelles à l'étendue [pMin, pMax] de chaque canal
-
-**Limite** : résolution 16 bits. Pour un signal de ±3mV, la résolution est ~0.09µV — largement suffisant pour l'ECG clinique.
-
----
-
-### `wfdb.ts` — WFDB (PhysioNet)
-
-| | |
-|---|---|
-| **Format** | Texte (header) + binaire (données) |
-| **Extensions** | `.hea` + `.dat` |
-| **Lecteurs** | PhysioNet WFDB, Python (wfdb), MATLAB |
-| **Entrée** | `channels`, `resampled[][]`, `nSamples`, `sampleRate`, `basePath` |
-| **Sortie** | Deux fichiers sur disque |
-
-**`.hea`** (header texte) : une ligne par canal avec nom du fichier .dat, format (16 bits), gain, unité, nom du canal.
-
-**`.dat`** (données binaires) : int16 **entrelacé** (échantillon 1 de tous les canaux, puis échantillon 2, etc.). C'est le format opposé de EDF qui est séquentiel (tout le canal 1, puis tout le canal 2).
-
----
-
-### `dicom.ts` — DICOM Waveform
-
-| | |
-|---|---|
-| **Format** | Binaire structuré (tags TLV) |
-| **Extension** | `.dcm` |
-| **Lecteurs** | OsiriX, Horos, MATLAB, Python (pydicom) |
-| **Entrée** | `channels`, `resampled[][]`, `nSamples`, `sampleRate`, `filename` |
-| **Sortie** | Fichier `.dcm` sur disque |
+Format XML structuré HL7 v3 utilisé pour les soumissions FDA américaines. Utilisé pour le téléchargement utilisateur via `/convert/hl7aecg`.
 
 **Structure** :
-- Préambule (128 octets vides + magic `DICM`)
-- Tags méta : Transfer Syntax, SOP Class (12-Lead ECG Waveform)
-- Tags patient : nom anonyme
-- Waveform Sequence (tag 5400,0100) contenant :
-  - Nombre de canaux, nombre d'échantillons, fréquence
-  - Channel Definition Sequence : nom et facteur de sensibilité par canal
-  - Waveform Data (tag 5400,1010) : int16 entrelacé
-
-**Remarque** : le facteur de sensibilité (`sensitivity`) est stocké par canal dans le tag 003A,0210. Il est essentiel pour reconvertir les valeurs int16 en mV.
-
----
-
-### `hdf5.ts` — HDF5 (simplifié)
-
-| | |
-|---|---|
-| **Format** | Binaire custom (PAS un vrai HDF5 complet) |
-| **Extension** | `.h5` |
-| **Lecteurs** | Code custom uniquement (pas compatible avec h5py/HDFView tel quel) |
-| **Entrée** | `channels`, `resampled[][]`, `nSamples`, `sampleRate`, `duration`, `filename`, `meta` |
-| **Sortie** | Fichier `.h5` sur disque |
-
-**Structure** :
-1. Magic bytes HDF5 (8 octets) — pour identification
-2. Longueur du header JSON (uint32 LE)
-3. Header JSON : métadonnées complètes (fréquence, durée, noms des canaux, fabricant...)
-4. Données brutes : float32 little-endian, channels-first (tout le canal 1, puis canal 2, etc.)
-
-**Attention** : ce format utilise les magic bytes HDF5 mais n'est **pas** un vrai fichier HDF5 conforme. Il ne sera pas lisible par h5py ou HDFView. C'est un format propriétaire simplifié. Si la compatibilité HDF5 est requise, ce writer doit être réécrit avec une vraie bibliothèque HDF5.
-
----
-
-### `webp.ts` — Image WebP 4K
-
-| | |
-|---|---|
-| **Format** | Image WebP |
-| **Extension** | `.webp` |
-| **Résolution** | 3840 × 2160 (4K) |
-| **Entrée** | `channels`, `data` (avec layout/scale), `filename` |
-| **Sortie** | Fichier `.webp` sur disque |
-
-**Processus** :
-1. Construit un SVG en mémoire contenant :
-   - Fond blanc
-   - Grille ECG (lignes roses 1mm et 5mm)
-   - Signal de chaque dérivation en `<polyline>`
-   - Pulse de calibration 1mV/200ms
-   - Labels des dérivations et infos fabricant
-2. Convertit le SVG en WebP via **sharp** (qualité 85%)
-
-Supporte deux layouts : `stacked_12x1` (12 lignes) ou 2 colonnes (6+6).
-
----
-
-### `hl7aecg.ts` — HL7 aECG XML
-
-| | |
-|---|---|
-| **Format** | XML structuré |
-| **Extension** | `.xml` |
-| **Standard** | HL7 Annotated ECG R1 DSTU (2004) |
-| **Lecteurs** | Systèmes HL7 v3, soumissions FDA |
-| **Entrée** | `channels`, `resampled[][]`, `nSamples`, `sampleRate`, `duration`, `filename`, `meta` |
-| **Sortie** | Fichier `.xml` sur disque |
-
-**Structure XML** :
 - `<AnnotatedECG>` racine avec namespaces HL7
-- `<id>` : identifiant unique du document
-- `<subject>` : patient anonymisé
-- `<series>` > `<sequenceSet>` contenant :
-  - Un composant temps : point de départ (0s) + incrément (1/fréquence)
-  - Un composant par dérivation : code MDC standard + valeurs en **microvolts** (mV × 1000)
+- `<series>` > `<sequenceSet>` contenant un composant temps + une `<sequence>` par dérivation
+- Échantillons en **microvolts** (mV × 1000), encodés en `<digits>` séparés par des espaces
+- Codes MDC : `MDC_ECG_LEAD_I`, `MDC_ECG_LEAD_V1`, etc.
 
-Les codes de dérivation suivent la nomenclature MDC : `MDC_ECG_LEAD_I`, `MDC_ECG_LEAD_V1`, etc.
+### `musexml.ts` — GE MUSE RestingECG XML (interne)
+
+Format XML propriétaire GE MUSE utilisé **uniquement en interne** pour alimenter le rendu Python. Le parser `ecg_generator/in_out/xml_parser.py` attend ce format précis (et pas du HL7 aECG).
+
+**Structure** :
+```xml
+<RestingECG>
+  <SampleBase>500</SampleBase>
+  <Waveform>
+    <WaveformType>Rhythm</WaveformType>
+    <LeadData>
+      <LeadID>I</LeadID>
+      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
+      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
+      <LeadSampleCountTotal>5000</LeadSampleCountTotal>
+      <WaveFormData>{base64 int16 LE µV}</WaveFormData>
+    </LeadData>
+    ...
+  </Waveform>
+</RestingECG>
+```
+
+**Encodage** : chaque échantillon mV est converti en int16 ADC : `int16 = round(mV × 1000 / 4.88)` (gain GE MUSE standard 4.88 µV/bit pour 16 bits). Concaténés en buffer little-endian, puis base64.
+
+**Note** : ce writer n'est pas exposé via une route — il est appelé directement par `/render-image`.
+
+### Writers legacy (`_legacy/writers/`)
+
+Désactivés mais conservés pour réactivation future :
+- `edf.ts` — European Data Format
+- `wfdb.ts` — PhysioNet WFDB
+- `dicom.ts` — DICOM Waveform
+- `hdf5.ts` — HDF5 simplifié
+- `webp.ts` — Image WebP via SVG + sharp (rendu maison, remplacé par le pipeline Python)
+
+Pour réactiver un format : déplacer le writer dans `src/writers/`, ré-importer dans `routes/ecg.ts`, ré-ajouter dans `FormatCards.tsx` côté frontend.
 
 ---
 
-## Fonctions utilitaires (routes/ecg.ts)
+## Pipeline Python (rendu d'image)
 
-### `resample(channels)`
+Le rendu d'image ECG est délégué à un sous-processus Python isolé. C'est le choix d'architecture qui évite les problèmes de thread-safety de matplotlib et qui permet de réutiliser un code Python éprouvé.
 
-Uniformise tous les canaux au même nombre d'échantillons par **interpolation linéaire**.
+### `scripts/render_ecg_image.py`
 
-- Prend la fréquence la plus élevée parmi tous les canaux (ou 500Hz par défaut)
-- Calcule le nombre de points cible : `fréquence × durée_max`
-- Pour chaque canal, interpole linéairement entre les points existants
+Wrapper CLI minimal (~40 lignes) :
+```bash
+python3 render_ecg_image.py <xml_path> <output_path>
+```
 
-Nécessaire car les writers attendent des canaux de taille identique.
+Stratégie d'erreur : exit code non-nul + message sur stderr → Node.js détecte l'échec et renvoie 500.
 
-### `makeBase(manufacturer)`
+### Packages vendorisés (`python/`)
 
-Génère un nom de fichier unique : `ecg_<fabricant>_<timestamp>`.
-Les caractères spéciaux du fabricant sont remplacés par `_`.
+Trois packages copiés depuis le repo `ECGPerturb` (pas en dépendance pip car privé) :
 
-### `convertFormat(format, ...)`
+| Package | Origine | Rôle |
+|---------|---------|------|
+| `ecg_generator/` | ECGPerturb (~10 000 lignes) | Pipeline complet de rendu : parse XML, layout, grille, signal, calibration, savefig matplotlib |
+| `ecgmind_raw2paper/` | ECGMind_Raw2Paper (~260 lignes) | Wrapper de haut niveau avec config standardisée (A4, layout 6x2+1, theme `softer_yellow_red`) |
+| `shared/` | ECGPerturb | Utilitaires (npz_schema, mask_generator) |
+| `DataAugmentation/` | ECGPerturb (minimal) | Seulement `multilingual_medical.py` (textes médicaux multilingues utilisés par `ecg_generator/config/randomization.py`) |
 
-Aiguilleur qui appelle le bon writer selon le format demandé.
+`PYTHONPATH=/app/python` est défini dans le Dockerfile pour que les imports `from ecg_generator...`, `from ecgmind_raw2paper...`, `from shared...`, `from DataAugmentation...` fonctionnent.
+
+### Format de sortie
+
+Image **WebP lossless 3564×2520** (A4 à 304.8 DPI) avec :
+- Fond crème `#FDFAF5`
+- Grille millimétrique dorée `#C8A020` (mineure 1mm + majeure 5mm `solid`)
+- Tracés noirs antialiased
+- 6 dérivations en 2 colonnes + 1 rythme strip (lead II) en bas
+- Pulses de calibration 1mV à droite de chaque ligne
+
+### Pipeline d'appel complet
+
+```
+[Frontend]                    [Backend Node.js]                          [Python sub-process]
+ECG JSON      ──HTTP──>   POST /api/ecg/render-image
+                               ↓
+                            resample(channels)
+                               ↓
+                            writeMuseXml() → /app/data/_render_<ts>.xml
+                               ↓
+                            execFile('python3', 'render_ecg_image.py', xml, img)
+                                                                            ↓
+                                                                  ecgmind_raw2paper.generate_ecg_image
+                                                                            ↓
+                                                                  ecg_generator parse XML, render, savefig
+                                                                            ↓
+                                                                       /app/data/_render_<ts>.webp
+                               ↓
+                            fs.readFileSync(img) → buffer
+                               ↓
+                            res.set('Content-Type', 'image/webp')
+                               ↓
+                            res.send(buf)
+                               ↓
+                            finally: unlink xml + img
+              <─binary─    image/webp blob
+```
 
 ---
 
-## Scripts legacy
+## Bugs résolus en cours d'intégration
 
-### `scripts/parse_xml_ecg.py`
+Pour la postérité, voici les blockers rencontrés lors de l'ajout du rendu Python :
 
-**Statut** : DÉSACTIVÉ — la route `/api/ecg/parse-xml` a été supprimée pour des raisons de confidentialité (le XML contenant potentiellement des données patient transitait vers le serveur).
-
-**Rôle** : parsait les fichiers XML ECG propriétaires (GE MUSE XML, Philips Sierra, HL7 aECG...) via la bibliothèque Python `ecg-datakit`, et renvoyait le signal en JSON.
-
-**Remplacement prévu** : parsing côté client (dans le navigateur) pour éviter tout transit de données patient.
+| # | Problème | Cause | Fix |
+|---|----------|-------|-----|
+| 1 | `ModuleNotFoundError: DataAugmentation` | `ecg_generator/config/randomization.py` importe `from DataAugmentation.resources.multilingual_medical import ...` au niveau module | Vendoriser uniquement `DataAugmentation/__init__.py`, `resources/__init__.py`, `multilingual_medical.py` et `medical_phrases.txt` (~40 Ko vs 471 Mo total) |
+| 2 | `ModuleNotFoundError: cv2` | `shared/map_utils.py` importe opencv au niveau module | Installer `opencv-python-headless` via pip |
+| 3 | `pip._vendor.packaging.version.InvalidVersion: 'python-4.10.0'` | Le paquet apk `py3-opencv` sur Alpine a une version mal formée que pip ne sait pas parser | Ne pas mélanger apk + pip pour opencv |
+| 4 | `Failed building wheel for opencv-python-headless` | Alpine n'a pas de wheels pré-compilés, scikit-build veut gcc + cmake | Passer de `node:18-alpine` à `node:18-slim` (Debian) qui a des wheels manylinux |
+| 5 | `StopIteration` dans `render_ecg_layout` (`leads_data.values()` vide) | On envoyait notre HL7 aECG mais le parser Python attend du **GE MUSE RestingECG** XML (structures complètement différentes) | Créer `writers/musexml.ts` qui produit le format MUSE attendu |
+| 6 | Image rendue avec fond blanc (pas le crème `#FDFAF5`) | `create_standard_figure()` ne définit pas `facecolor` → matplotlib défaut blanc | Patcher `ecgmind_raw2paper/pipeline.py` : `fig.patch.set_facecolor(bg)` + `savefig(facecolor=bg)` |
+| 7 | Grille complètement absente (image 7.5 Ko, juste signal sur fond crème) | La config avait `grid_style: ["lignes", "lignes"]` (mots français) mais le code n'accepte que `"solid"`, `"dashed"`, `"dotted"`, `"dots"` → tous les `if` du dessin échouent silencieusement | Changer en `grid_style: ["solid", "solid"]` |
 
 ---
 
 ## Dépendances
 
-### Production (`dependencies`)
-
-| Package | Version | Rôle |
-|---------|---------|------|
-| `express` | ^4.18.2 | Serveur HTTP et routage |
-| `cors` | ^2.8.5 | Headers CORS pour les requêtes cross-origin du frontend |
-| `multer` | ^2.1.1 | Parsing multipart/form-data (upload de fichiers PDF pour /report) |
-| `sharp` | ^0.33.2 | Conversion SVG → WebP (utilisé uniquement par le writer webp) |
-
-### Développement (`devDependencies`)
-
-| Package | Version | Rôle |
-|---------|---------|------|
-| `typescript` | ^5.2.2 | Compilateur TypeScript → JavaScript |
-| `tsx` | ^4.7.0 | Exécution TypeScript directe en dev (`npm run dev`) |
-| `@types/cors` | ^2.8.17 | Types TypeScript pour cors |
-| `@types/express` | ^4.17.21 | Types TypeScript pour express |
-| `@types/multer` | ^2.1.0 | Types TypeScript pour multer |
-| `@types/node` | ^20.10.0 | Types TypeScript pour Node.js |
-
-### Runtime système (installé dans le Dockerfile)
+### Production npm (`dependencies`)
 
 | Package | Rôle |
 |---------|------|
-| `fontconfig`, `font-dejavu` | Polices pour le rendu SVG → WebP (sharp) |
-| `python3`, `py3-pip`, `py3-numpy`, `py3-scipy` | [LEGACY] Runtime Python pour parse_xml_ecg.py |
-| `ecgdatakit` (pip) | [LEGACY] Bibliothèque de parsing XML ECG |
+| `express` | Serveur HTTP et routage |
+| `cors` | Headers CORS pour le frontend |
+| `multer` | Upload multipart/form-data (route /report) |
+| `sharp` | (Plus utilisé activement — était pour le writer WebP legacy) |
 
-> Les dépendances Python peuvent être retirées du Dockerfile lorsque le parser XML sera définitivement supprimé.
+### Runtime système (Dockerfile)
+
+```dockerfile
+RUN apt-get install -y --no-install-recommends \
+        fontconfig fonts-dejavu python3 python3-pip
+RUN pip3 install --no-cache-dir --break-system-packages \
+        numpy scipy Pillow matplotlib lxml h5py wfdb faker pyyaml \
+        opencv-python-headless scikit-image
+```
 
 ---
 
 ## Tests unitaires
 
-**Il n'y a actuellement aucun test unitaire.**
-
-### Tests recommandés à implémenter
+**Aucun test pour l'instant.** Tests recommandés à implémenter :
 
 | Priorité | Cible | Ce qu'il faut tester |
 |----------|-------|----------------------|
-| **Haute** | `resample()` | Canal vide, canal à 1 point, canaux de tailles différentes, fréquences différentes, interpolation correcte |
-| **Haute** | `writeEDF()` | Header conforme EDF+ (256 octets), conversion mV → int16 aller-retour, lecture avec pyedflib |
-| **Haute** | `writeWFDB()` | Header .hea parsable, données .dat entrelacées, lecture avec wfdb-python |
-| **Moyenne** | `writeDICOM()` | Tags DICOM valides, lecture avec pydicom |
-| **Moyenne** | `writeHL7aECG()` | XML bien formé, valeurs en µV correctes, schéma HL7 valide |
+| **Haute** | `writeMuseXml()` | Round-trip mV → base64 int16 → mV identique au gain près. Vérifier que le parser Python reload correctement les leads |
+| **Haute** | `writeHL7aECG()` | XML bien formé, valeurs en µV correctes, schéma HL7 valide |
+| **Haute** | `/api/ecg/render-image` | Bout-en-bout : envoyer un JSON ECG, recevoir une image WebP valide non vide |
+| **Haute** | `render_ecg_image.py` | Échec gracieux (exit code 2 + stderr) si XML invalide |
+| **Moyenne** | `resample()` | Canal vide, 1 point, fréquences mixtes |
 | **Moyenne** | Path traversal | `GET /api/ecg/data/../../etc/passwd` → 403 |
-| **Basse** | `writeWebP()` | Image générée non vide, résolution correcte |
-| **Basse** | `writeHDF5()` | Structure lisible (magic + JSON + float32) |
-
-### Tests d'intégration (round-trip)
-
-Le test le plus important : **round-trip** — écrire un fichier puis le relire et vérifier que les valeurs mV sont identiques (à la précision 16 bits près pour EDF/WFDB/DICOM, exact pour HDF5/HL7).
 
 ---
 
-## Evaluation de sécurité — Confidentialité
+## Évaluation sécurité — Confidentialité
 
 ### Données qui transitent vers le serveur
 
-| Donnée | Contient des infos patient ? | Remarque |
-|--------|------------------------------|----------|
-| Signal ECG (JSON via `/convert`) | **Partiellement** — le signal ECG lui-même est une donnée de santé, mais il est déjà anonymisé (pas de nom, pas d'ID). Le champ `manufacturer` ne contient aucune info patient. | Risque modéré |
-| PDF anonymisé (via `/report`) | **Non** — le frontend anonymise le PDF avant envoi (suppression nom, ID, dates). | Risque faible si l'anonymisation frontend est correcte |
-| Fichiers XML ECG | **[DÉSACTIVÉ]** — cette route envoyait le XML brut (avec potentiellement nom, ID, date de naissance) au serveur. C'est la raison de sa désactivation. | N/A |
+| Donnée | Route | Contient des infos patient ? |
+|--------|-------|------------------------------|
+| Signal ECG en mV (JSON) | `POST /api/ecg/convert/hl7aecg`, `POST /api/ecg/render-image` | **Signal uniquement** — pas de nom, ID, date. Mais le signal ECG est une donnée de santé au sens RGPD |
+| PDF anonymisé | `POST /api/ecg/report` | Non — anonymisé côté client avant envoi |
 
-### Points d'attention
+### Points d'attention spécifiques au pipeline Python
 
 | Risque | Niveau | Détail |
 |--------|--------|--------|
-| **Signal ECG = donnée de santé** | Moyen | Même sans nom/ID, un signal ECG est considéré comme donnée de santé au sens RGPD. Le signal transite en HTTPS mais est stocké dans `DATA_DIR` sur le serveur. |
-| **Pas de nettoyage automatique** | Moyen | Les fichiers générés dans `DATA_DIR` ne sont jamais supprimés automatiquement. Ils s'accumulent. Un cron de nettoyage est recommandé. |
-| **Pas d'authentification** | Elevé | L'API est ouverte — n'importe qui peut appeler `/convert` ou `/report`. En production, ajouter une authentification ou un rate limiting. |
-| **Path traversal (GET /data)** | Faible | Protection existante : `filePath.startsWith(DATA_DIR)`. Cependant, cette vérification peut être contournée avec des encodages exotiques. Utiliser `path.resolve()` + vérification serait plus robuste. |
-| **Injection dans le nom de fichier** | Faible | `makeBase()` nettoie le fabricant avec une regex `[^a-zA-Z0-9_-]`. Les noms de fichiers sont sûrs. |
-| **GitHub token** | Faible | Le `GITHUB_TOKEN` est dans `.env` (gitignored). Il n'est utilisé que pour poster des commentaires sur une issue. Scope minimal recommandé. |
-| **Taille des requêtes** | Faible | Limite à 60 Mo pour le JSON, 50 Mo pour les uploads PDF. Suffisant pour empêcher les abus basiques, mais pas de rate limiting. |
+| **Fichiers temporaires sur disque** | Moyen | `/render-image` écrit le XML et l'image dans `/app/data/` pendant 1-3 secondes. Le `finally` les supprime, mais en cas de crash entre-temps ils restent. |
+| **Sous-processus Python** | Faible | `execFile` avec arguments tableau (pas de shell), timeout 30s, paths absolus. Pas d'injection possible. |
+| **Concurrence matplotlib** | OK | Chaque appel fork un nouveau processus Python isolé → pas de problème de thread-safety. |
+| **Mémoire** | Moyen | matplotlib + savefig à 3564×2520 consomme ~150-300 Mo par appel. À surveiller en charge. |
+| **Latence** | Moyen | Rendu Python : 1-3 secondes par image. Pas de queue → si plusieurs requêtes simultanées, elles s'empilent. |
 
 ### Recommandations
 
-1. **Ajouter un cron de nettoyage** de `DATA_DIR` (supprimer les fichiers > 24h)
-2. **Ajouter une authentification** ou au minimum un rate limiting sur les routes
-3. **Renforcer la protection path traversal** avec `path.resolve()` + vérification stricte
-4. **Retirer les dépendances Python** du Dockerfile (legacy XML parser)
-5. **Implémenter les tests round-trip** pour garantir la fidélité des conversions
-6. **Évaluer si le signal ECG anonyme doit transiter** — idéalement, la conversion en formats médicaux se ferait aussi côté client (via WebAssembly ou JS pur) pour éliminer tout transit de données de santé
+1. **Cron de nettoyage** de `DATA_DIR` (supprimer les fichiers > 24h)
+2. **Authentification** ou rate limiting sur les routes (actuellement ouvertes)
+3. **Tests round-trip** writeMuseXml ↔ render Python pour valider la fidélité
+4. **Métriques** : logger le temps de rendu Python pour détecter les régressions de performance
+5. **Pool de processus Python** si la charge augmente (avec un système type RQ/Celery)
