@@ -45,6 +45,10 @@ export function detectLayout(tr: Polyline[], vp: { width: number; height: number
     if (cols.length >= 4 && rows.length >= 3) {
       return { type: 'grid_4x3', tA, vI };
     }
+    // 6x2 layout: 2 columns × at least 5 rows (12 leads = 6 left + 6 right)
+    if (cols.length === 2 && rows.length >= 5) {
+      return { type: 'sequential_6x2', tA, vI };
+    }
   }
 
   const perpVals = tr.map(t => t.bb!.cy);

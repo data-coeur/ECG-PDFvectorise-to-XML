@@ -40,35 +40,27 @@ type FormatKey = 'hl7aecg';
 
 const VALID_FORMATS: FormatKey[] = ['hl7aecg'];
 
+// Pass channels through unchanged. The frontend already produces samples at the
+// optimal rate for each channel (uniform PDFs → preserved as-is, non-uniform →
+// resampled to 500 Hz). Resampling here would only smooth/distort the data.
+//
+// We use the highest sample rate found across channels as the "global" sample rate
+// in the XML SampleBase tag (used by the Python renderer to compute the time axis).
+// Per-channel sample counts are preserved via samplesPerChArr.
 function resample(channels: Channel[]) {
   let maxDur = 0;
-  for (const ch of channels) maxDur = Math.max(maxDur, ch.duration_s || 0);
-  if (maxDur <= 0) maxDur = 10;
-
   let srcRate = 0;
   for (const ch of channels) {
-    const r = ch.sample_rate_hz || 0;
-    if (r > srcRate) srcRate = r;
+    if (ch.duration_s > maxDur) maxDur = ch.duration_s;
+    if (ch.sample_rate_hz > srcRate) srcRate = ch.sample_rate_hz;
   }
+  if (maxDur <= 0) maxDur = 10;
   const sampleRate = srcRate > 0 ? srcRate : 500;
-  const samplesPerCh = Math.round(sampleRate * maxDur);
 
-  const resampled: number[][] = [];
-  for (const ch of channels) {
-    const src = ch.samples;
-    const n = src.length;
-    const out: number[] = [];
-    for (let i = 0; i < samplesPerCh; i++) {
-      const srcIdx = n > 1 ? i / (samplesPerCh - 1) * (n - 1) : 0;
-      const lo = Math.floor(srcIdx);
-      const hi = Math.min(lo + 1, n - 1);
-      const frac = srcIdx - lo;
-      out.push(src[lo] * (1 - frac) + src[hi] * frac);
-    }
-    resampled.push(out);
-  }
-
-  return { resampled, sampleRate, samplesPerCh, maxDur };
+  const resampled: number[][] = channels.map(c => [...c.samples]);
+  const samplesPerChArr: number[] = channels.map(c => c.samples.length);
+  const samplesPerCh = Math.max(...samplesPerChArr);
+  return { resampled, sampleRate, samplesPerCh, samplesPerChArr, maxDur };
 }
 
 function makeBase(mfr: string) {
@@ -146,9 +138,10 @@ ecgRouter.post('/render-image', async (req, res) => {
         duration_s: c.duration_s * 2,
       }));
     }
-    const { resampled, sampleRate, samplesPerCh } = resample(channels);
+    const { resampled, sampleRate, samplesPerChArr } = resample(channels);
     // Use MUSE-style RestingECG XML — that's the format expected by the Python parser
-    writeMuseXml(channels, resampled, samplesPerCh, sampleRate, xmlPath);
+    // Pass per-channel sample counts so the rhythm strip can have a different duration
+    writeMuseXml(channels, resampled, samplesPerChArr, sampleRate, xmlPath);
 
     // In container: __dirname = /app/dist/routes/, scripts at /app/scripts/
     const scriptPath = path.resolve(__dirname, '../../scripts/render_ecg_image.py');

@@ -54,7 +54,9 @@ export default function App() {
       }
       setEcgData(result);
       const layoutLabel = t(`layout.${result.layout}` as TranslationKey) || result.layout;
-      setStatus({ msg: `${result.channels.length} ${t('status.channels')} · ${result.manufacturer} · ${layoutLabel}`, type: 'ok', loading: false });
+      // Don't count synthetic rhythm strip channels (e.g. "II_rhythm") in the user-facing count
+      const detectedCount = result.channels.filter(c => !/_rhythm$/i.test(c.name)).length;
+      setStatus({ msg: `${detectedCount} ${t('status.channels')} · ${result.manufacturer} · ${layoutLabel}`, type: 'ok', loading: false });
     } catch (e) {
       const msg = (e as Error).message;
       if (msg === 'GRID_NOT_DETECTED') {

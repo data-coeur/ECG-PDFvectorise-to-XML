@@ -6,7 +6,7 @@
 
 import { pdfjsLib } from '../pdf-config';
 import type { PDFPageProxy, PDFDocumentProxy } from 'pdfjs-dist';
-import type { Label, ECGData } from '../types';
+import type { Label, ECGData, ECGChannel } from '../types';
 import { LEAD_NAMES, LEAD_ALIASES } from './constants';
 import { detectManufacturer, resolveProfile } from './profiles';
 import { parse } from './parse-paths';
@@ -78,6 +78,32 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   const calBaselines = extractCalibrationBaselines(allPolylines, scale, layout, profile);
 
   // Step 9: Convert each trace from PDF coordinates to millivolts
+  // Helper to convert one assigned trace into an ECGChannel object
+  const toChannel = (c: typeof assigned[number]): ECGChannel => {
+    const baseline = findBaselineForTrace(c.pts, calBaselines, layout);
+    const signal = toPhysical(c.pts, scale, layout, baseline);
+    let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
+    for (const p of c.pts) {
+      if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x;
+      if (p.y < by0) by0 = p.y; if (p.y > by1) by1 = p.y;
+    }
+    return {
+      name: c.name, samples: signal.samples, duration_s: signal.dur,
+      sample_rate_hz: signal.samples.length > 1 ? Math.round(signal.samples.length / signal.dur) : 0,
+      voltage_unit: 'mV', time_unit: 's',
+      bbox: { x0: bx0, x1: bx1, y0: by0, y1: by1 },
+    };
+  };
+
+  // Build the standard 12 leads (everything except *_rhythm channels)
+  const standardChannels: ECGChannel[] = assigned
+    .filter(c => !/_rhythm$/i.test(c.name))
+    .map(toChannel);
+
+  // Build the rhythm strip channel (target ~10s duration)
+  const TARGET_RHYTHM_DURATION_S = 10;
+  const rhythmChannel = buildRhythmStripChannel(assigned, standardChannels, toChannel, TARGET_RHYTHM_DURATION_S);
+
   return {
     manufacturer: profile.name,
     layout: layout.type,
@@ -85,23 +111,47 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
     page_size: { width: Math.round(vp.width), height: Math.round(vp.height) },
     scale: { mm_per_s: 25, mm_per_mV: 10, pts_per_mm: Math.round(scale.pmm * 100) / 100 },
     grid,
-    // Exclude rhythm strip channels (e.g. "II_rhythm" from grid_4x3 layouts).
-    // The Python renderer generates its own rhythm strip from the standard lead II.
-    // Their longer duration would otherwise inflate the resample target and stretch all leads.
-    channels: assigned.filter(c => !/_rhythm$/i.test(c.name)).map(c => {
-      const baseline = findBaselineForTrace(c.pts, calBaselines, layout);
-      const signal = toPhysical(c.pts, scale, layout, baseline);
-      let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
-      for (const p of c.pts) {
-        if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x;
-        if (p.y < by0) by0 = p.y; if (p.y > by1) by1 = p.y;
-      }
-      return {
-        name: c.name, samples: signal.samples, duration_s: signal.dur,
-        sample_rate_hz: signal.samples.length > 1 ? Math.round(signal.samples.length / signal.dur) : 0,
-        voltage_unit: 'mV', time_unit: 's',
-        bbox: { x0: bx0, x1: bx1, y0: by0, y1: by1 },
-      };
-    }),
+    channels: rhythmChannel ? [...standardChannels, rhythmChannel] : standardChannels,
+  };
+}
+
+// Build a rhythm strip channel for the bottom row of the layout.
+// - If the PDF already provides a separate rhythm strip channel (Mortara 12+1),
+//   use it as-is with its real duration.
+// - Otherwise, repeat lead II enough times to reach `targetDuration` seconds
+//   (e.g. ×2 for MUSE 5s leads → 10s rhythm strip).
+function buildRhythmStripChannel(
+  assigned: ReturnType<typeof assign>,
+  standardChannels: ECGChannel[],
+  toChannel: (c: ReturnType<typeof assign>[number]) => ECGChannel,
+  targetDuration: number,
+): ECGChannel | null {
+  // Case 1: PDF provides a separate rhythm strip — use the original 10s data
+  const originalRhythm = assigned.find(c => /_rhythm$/i.test(c.name));
+  if (originalRhythm) {
+    const ch = toChannel(originalRhythm);
+    return { ...ch, name: 'II_rhythm' };
+  }
+
+  // Case 2: No separate rhythm strip — repeat lead II to reach targetDuration
+  const leadII = standardChannels.find(c => c.name === 'II');
+  if (!leadII || leadII.duration_s <= 0) return null;
+  if (leadII.duration_s >= targetDuration) {
+    // Already long enough, just clone with rhythm name
+    return { ...leadII, name: 'II_rhythm' };
+  }
+
+  // Tolerance to avoid e.g. ceil(2.0008) = 3 when duration is ~4.998s instead of 5s
+  const ratio = targetDuration / leadII.duration_s;
+  const repeats = Math.max(1, Math.ceil(ratio - 0.05));
+  const repeatedSamples: number[] = [];
+  for (let r = 0; r < repeats; r++) repeatedSamples.push(...leadII.samples);
+  const newDur = leadII.duration_s * repeats;
+  return {
+    ...leadII,
+    name: 'II_rhythm',
+    samples: repeatedSamples,
+    duration_s: newDur,
+    sample_rate_hz: Math.round(repeatedSamples.length / newDur),
   };
 }

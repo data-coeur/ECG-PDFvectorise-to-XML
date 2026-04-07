@@ -1,7 +1,9 @@
 """ECG image generation pipeline."""
 
 import os
+import base64
 import xml.etree.ElementTree as ET
+import numpy as np
 import matplotlib.pyplot as plt
 
 from ecg_generator.in_out.data_source import create_data_source
@@ -44,6 +46,46 @@ def _read_source_duration_seconds(input_path, n_samples):
     return None
 
 
+def _read_rhythm_strip_signal(input_path):
+    """
+    Read the rhythm strip channel ("II_rhythm") from a MUSE-style XML if present.
+
+    The standard ecg_generator XML parser only extracts the 12 standard leads
+    and drops everything else, but we use the channel name "II_rhythm" to
+    smuggle a longer rhythm signal that should be displayed on the bottom row.
+
+    Returns:
+        numpy.ndarray: rhythm strip signal in mV, or None if not present.
+    """
+    if not input_path.lower().endswith(".xml"):
+        return None
+    try:
+        tree = ET.parse(input_path)
+        root = tree.getroot()
+        for waveform in root.findall(".//Waveform"):
+            wt = waveform.find("WaveformType")
+            if wt is None or wt.text is None or wt.text.strip().upper() != "RHYTHM":
+                continue
+            for lead in waveform.findall("LeadData"):
+                lid = lead.find("LeadID")
+                if lid is None or lid.text is None:
+                    continue
+                if not lid.text.strip().lower().endswith("_rhythm"):
+                    continue
+                gain_el = lead.find("LeadAmplitudeUnitsPerBit")
+                wfd_el = lead.find("WaveFormData")
+                if gain_el is None or wfd_el is None or wfd_el.text is None:
+                    continue
+                gain = float(gain_el.text.strip())
+                b64 = wfd_el.text.replace('\n', '').replace('\r', '')
+                decoded = base64.b64decode(b64)
+                signal = np.frombuffer(decoded, dtype='<i2') * gain / 1000.0
+                return signal
+    except Exception:
+        pass
+    return None
+
+
 def generate_ecg_image(input_path, output_path, output_format="webp"):
     """
     Generate a standardized ECG image from an ECG data file.
@@ -61,6 +103,17 @@ def generate_ecg_image(input_path, output_path, output_format="webp"):
     # 1. Load ECG data (auto-detects format)
     source = create_data_source(input_path)
     ecg_id, leads_data = next(iter(source))
+
+    # If the XML carries a dedicated rhythm strip channel ("II_rhythm" or similar),
+    # substitute lead II with this longer signal. The renderer will:
+    #  - show the first slice_samples (= short duration) in the II grid cell
+    #  - show extra_samples (= slice_samples × n_cols ≈ full row width) on the rhythm row
+    # Since the rhythm signal's first samples are identical to the regular lead II,
+    # the grid cell remains correct while the rhythm strip uses the full long signal.
+    rhythm_signal = _read_rhythm_strip_signal(input_path)
+    if rhythm_signal is not None and "II" in leads_data:
+        if len(rhythm_signal) > len(leads_data["II"]):
+            leads_data["II"] = rhythm_signal
 
     # 2. Build and validate config
     config = build_standard_config()
