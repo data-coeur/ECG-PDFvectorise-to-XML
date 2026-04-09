@@ -30,9 +30,9 @@ export default function StepIndicator({ current, completed }: Props) {
         return (
           <div key={s.key} className="flex items-start">
             {i > 0 && (
-              <div className={`h-0.5 w-8 sm:w-12 mt-[15px] transition-colors ${done || past ? 'bg-primary' : 'bg-slate-200'}`} />
+              <div className={`h-0.5 w-6 sm:w-10 mt-[15px] mx-1 transition-colors ${done || past ? 'bg-primary' : 'bg-slate-200'}`} />
             )}
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex w-20 sm:w-24 flex-col items-center gap-1">
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-all ${
                   done

@@ -40,6 +40,29 @@ type FormatKey = 'hl7aecg';
 
 const VALID_FORMATS: FormatKey[] = ['hl7aecg'];
 
+// Reshape one channel so it covers exactly `target` seconds.
+//   - target < source: truncate to the first `target * sampleRate` samples
+//   - target > source: concatenate the channel with itself enough times to
+//                      cover the target, then truncate to the exact length
+//   - target ≈ source: passthrough
+// The Python renderer reads the XML duration and picks the page format from it
+// (≤4s → 3x4+1, ≤8s → 6x2+1, else 12x1).
+function fitChannelToDuration(c: Channel, target: number): Channel {
+  const sourceLen = c.samples.length;
+  if (sourceLen === 0 || c.duration_s <= 0) return c;
+  if (Math.abs(target - c.duration_s) < 1e-3) return c;
+  const sampleRate = sourceLen / c.duration_s;
+  const targetLen = Math.max(1, Math.round(target * sampleRate));
+  let samples: number[];
+  if (targetLen <= sourceLen) {
+    samples = c.samples.slice(0, targetLen);
+  } else {
+    samples = new Array(targetLen);
+    for (let i = 0; i < targetLen; i++) samples[i] = c.samples[i % sourceLen];
+  }
+  return { ...c, samples, duration_s: target };
+}
+
 // Pass channels through unchanged. The frontend already produces samples at the
 // optimal rate for each channel (uniform PDFs → preserved as-is, non-uniform →
 // resampled to 500 Hz). Resampling here would only smooth/distort the data.
@@ -114,36 +137,32 @@ ecgRouter.post('/convert/:format', async (req, res) => {
 // Pipeline: ECG JSON → HL7 aECG XML temp file → Python script → WebP image → response body.
 //
 // Query params:
-//   ?mode=original  (default) — render the signal at its real duration
-//   ?mode=doubled              — duplicate each channel's samples (paste 2× side-by-side)
-//                                so the signal fills more of the page width
+//   ?target=<seconds>  — render every channel at this exact duration. Channels
+//                        shorter than target are concatenated with themselves
+//                        until they cover it; channels longer are truncated.
+//                        The Python pipeline then picks the page format from the
+//                        resulting duration (≤4s → 3x4+1, ≤8s → 6x2+1, else 12x1).
+//                        If absent/invalid, the signal is rendered as-is.
 ecgRouter.post('/render-image', async (req, res) => {
-  const ts = Date.now();
-  const xmlPath = path.join(DATA_DIR, `_render_${ts}.xml`);
-  const imgPath = path.join(DATA_DIR, `_render_${ts}.webp`);
+  const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const xmlPath = path.join(DATA_DIR, `_render_${uid}.xml`);
+  const imgPath = path.join(DATA_DIR, `_render_${uid}.webp`);
   try {
     const data = req.body;
     if (!data?.channels?.length) return res.status(400).json({ error: 'No channels' });
 
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-    const mode = (req.query.mode as string) === 'doubled' ? 'doubled' : 'original';
+    const targetRaw = parseFloat(req.query.target as string);
+    const target = Number.isFinite(targetRaw) && targetRaw > 0 ? targetRaw : null;
+
     let channels: Channel[] = data.channels;
-    if (mode === 'doubled') {
-      // Duplicate each channel's samples 2× side-by-side to fill the page better.
-      // This shows the same signal twice but makes use of the wider layout cells.
-      channels = channels.map((c: Channel) => ({
-        ...c,
-        samples: [...c.samples, ...c.samples],
-        duration_s: c.duration_s * 2,
-      }));
+    if (target !== null) {
+      channels = channels.map((c: Channel) => fitChannelToDuration(c, target));
     }
     const { resampled, sampleRate, samplesPerChArr } = resample(channels);
-    // Use MUSE-style RestingECG XML — that's the format expected by the Python parser
-    // Pass per-channel sample counts so the rhythm strip can have a different duration
     writeMuseXml(channels, resampled, samplesPerChArr, sampleRate, xmlPath);
 
-    // In container: __dirname = /app/dist/routes/, scripts at /app/scripts/
     const scriptPath = path.resolve(__dirname, '../../scripts/render_ecg_image.py');
     const { stderr } = await execFileAsync('python3', [scriptPath, xmlPath, imgPath], {
       timeout: 30000,

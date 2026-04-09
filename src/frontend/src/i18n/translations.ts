@@ -2,7 +2,7 @@ const translations = {
   fr: {
     // Header
     'app.title': 'ECG mind',
-    'app.subtitle': 'Extraction du signal & conversion en formats standards',
+    'app.subtitle': 'De vos ECG (données sources, PDF vectoriel ou image) vers des formats numériques standards',
 
     // Steps
     'step.upload': 'Upload',
@@ -17,8 +17,9 @@ const translations = {
     // Batch conversion
     'batch.button': 'Traiter une base de données complète',
     'batch.title': 'Conversion par lot',
-    'batch.wipBadge': 'En développement',
-    'batch.subtitle': 'Le traitement par lot intégré n\'est pas encore disponible. En attendant, deux solutions existent :',
+    'batch.standard.subtitle': 'Pour traiter une base d\'ECG complète, deux solutions sont à votre disposition :',
+    'batch.stop': 'Arrêter',
+    'batch.stopped': 'Interrompu',
     'batch.option1.title': 'Confier le traitement à notre équipe',
     'batch.option1.desc': 'Nous convertissons votre base de données pour vous. Cliquez pour nous contacter.',
     'batch.option2.title': 'Déployer la solution sur vos serveurs',
@@ -87,25 +88,23 @@ const translations = {
     'fmt.wip.close': 'Fermer',
     'image.rendering': 'Génération de l\'image ECG...',
     'image.error': 'Erreur de rendu',
-    'image.mode.label': 'Format de rendu',
-    'image.mode.original': 'Original',
-    'image.mode.doubled': 'Doublé (2× le signal)',
+    'image.transform.extended': 'Le signal d\'origine ({src} s par dérivation) a été répété pour atteindre les {tgt} s requis par le format {layout}.',
+    'image.transform.truncated': 'Le format {layout} ne conserve que les {tgt} premières secondes du tracé d\'origine ({src} s par dérivation).',
 
     // Info card
     'info.principle.title': 'Principe',
-    'info.principle.text': 'Cet outil extrait le signal électrique depuis un ECG au format PDF vectorisé, puis le convertit en formats numériques standards. L\'extraction est réalisée directement dans votre navigateur — aucune donnée patient n\'est extraite ni transmise.',
+    'info.principle.text': 'ECG mind convertit vos ECG en formats numériques standards, utilisables en clinique comme en recherche. Aujourd\'hui l\'outil prend en charge les PDF vectoriels ; d\'autres types d\'entrée et de sortie viendront s\'y ajouter. Les données patient ne quittent jamais votre poste — seul le signal numérique est transmis au serveur le temps de la conversion.',
     'info.upload.title': 'Upload',
-    'info.upload.text': 'Déposez un PDF ECG vectorisé (non scanné). Les principaux fabricants sont supportés : Schiller, GE MUSE, Philips, Mortara/Burdick, et autres. Le fichier est lu localement par votre navigateur.',
+    'info.upload.text': 'Déposez un ECG. Pour l\'instant, les fichiers acceptés sont les PDF vectoriels issus des principaux constructeurs (GE MUSE, Schiller, Mortara/Burdick…). La prise en charge des données sources (XML propriétaires) et des images est en cours de développement.',
     'info.extract.title': 'Extraction',
-    'info.extract.text': 'Le signal est extrait en analysant les tracés vectoriels (chemins SVG) contenus dans le PDF. Les 12 dérivations standard sont identifiées automatiquement avec leur calibration (gain, vitesse).',
+    'info.extract.text': 'Le signal est extrait localement par votre navigateur. Les valeurs numériques sont ensuite transmises au serveur, qui les convertit au format XML standard et les renvoie pour affichage.',
     'info.convert.title': 'Conversion',
-    'info.convert.text': 'Le signal extrait peut être converti en 6 formats : EDF+ (standard ouvert), WFDB (PhysioNet), DICOM (hospitalier), HDF5 (scientifique), WebP (image 4K), HL7 aECG (FDA). La conversion est effectuée côté serveur.',
+    'info.convert.text': 'Trois sorties sont disponibles à la demande : un fichier XML HL7 aECG (format standard pour le stockage, l\'interopérabilité et la recherche), un PDF vectoriel anonymisé et une image. Vous ne générez que ce dont vous avez besoin.',
     'info.privacy.title': 'Confidentialité',
-    'info.privacy.text': 'Seul le signal numérique brut est envoyé au serveur pour conversion. Les données patient (nom, date de naissance, identifiants) contenues dans le PDF ne sont jamais extraites ni transmises.',
+    'info.privacy.text': 'Les données patient présentes dans le fichier d\'origine (nom, date de naissance, identifiants) ne sont jamais transmises au serveur. Seuls les échantillons numériques du signal le sont, et uniquement le temps nécessaire à la conversion.',
 
     // Header buttons
     'btn.home': 'Accueil',
-    'btn.devMode': 'Mode développeur',
 
     // Anonymization
     'anon.title': 'Anonymisation PDF',
@@ -125,28 +124,32 @@ const translations = {
     'anon.removed': 'éléments texte supprimés',
     'anon.error': 'Erreur',
 
-    // Report extraction issue
-    'report.btn': 'Signaler un dysfonctionnement',
-    'report.title': 'Signaler une extraction incorrecte',
-    'report.body': 'Pour améliorer l\'algorithme d\'extraction, nous avons besoin du PDF source. Le fichier sera anonymisé (toutes les données patient supprimées) avant l\'envoi au serveur.',
+    // Unsupported file type popup
+    'unsupported.title': 'Format non pris en charge',
+    'unsupported.detected': 'Format détecté',
+    'unsupported.close': 'Fermer',
+    'unsupported.accepted': 'Formats actuellement acceptés : PDF vectoriel issu d\'un appareil ECG (GE MUSE, Schiller, Mortara/Burdick…).',
+    'unsupported.pdf-raster': 'Ce fichier est un PDF, mais il s\'agit d\'un PDF image (scan ou export bitmap), pas d\'un PDF vectoriel. ECG mind a besoin du tracé sous forme de chemins vectoriels pour reconstruire le signal.',
+    'unsupported.image': 'La conversion à partir d\'images (JPEG, PNG, etc.) est encore en cours de développement.',
+    'unsupported.xml-ecg': 'La conversion à partir de données sources XML est encore en cours de développement.',
+    'unsupported.xml-other': 'Ce fichier XML n\'a pas été reconnu comme un ECG.',
+    'unsupported.dicom': 'La conversion à partir de DICOM Waveform est encore en cours de développement.',
+    'unsupported.unknown': 'Ce type de fichier n\'est pas pris en charge.',
+
+    // Report unsupported ECG type
+    'report.btn': 'Signaler un ECG non supporté',
+    'report.title': 'Contribuez au développement',
+    'report.body': 'ECG mind est encore en développement et tous les formats ne sont pas encore reconnus. Si votre ECG ne s\'affiche pas correctement, vous pouvez nous l\'envoyer en un clic : nous l\'utiliserons pour améliorer l\'algorithme et ajouter le support de votre type d\'ECG dans une prochaine version. Le fichier est entièrement anonymisé (toutes les données patient sont supprimées) avant tout envoi.',
     'report.confirm': 'Anonymiser et envoyer',
     'report.cancel': 'Annuler',
     'report.sending': 'Anonymisation et envoi...',
-    'report.done': 'PDF envoyé — merci !',
+    'report.done': 'Merci ! Votre ECG nous aidera à améliorer l\'outil.',
     'report.error': 'Erreur lors de l\'envoi',
-
-    // Dev mode
-    'dev.pdfSource': 'Source PDF',
-    'dev.extractedSignals': 'Signaux extraits',
-    'dev.details': 'Détails d\'extraction',
-    'dev.channelDetails': 'Détails par canal',
-    'dev.samples': 'échantillons',
-    'dev.pageDimensions': 'Dimensions page',
   },
   en: {
     // Header
     'app.title': 'ECG mind',
-    'app.subtitle': 'Signal extraction & standard format conversion',
+    'app.subtitle': 'From your ECGs (source data, vectorized PDF or image) to standard digital formats',
 
     // Steps
     'step.upload': 'Upload',
@@ -161,8 +164,9 @@ const translations = {
     // Batch conversion
     'batch.button': 'Process a full database',
     'batch.title': 'Batch conversion',
-    'batch.wipBadge': 'In development',
-    'batch.subtitle': 'Built-in batch processing is not available yet. In the meantime, two options exist:',
+    'batch.standard.subtitle': 'To process a full ECG database, two options are available:',
+    'batch.stop': 'Stop',
+    'batch.stopped': 'Stopped',
     'batch.option1.title': 'Let our team handle it',
     'batch.option1.desc': 'We convert your database for you. Click to contact us.',
     'batch.option2.title': 'Deploy the solution on your servers',
@@ -231,25 +235,23 @@ const translations = {
     'fmt.wip.close': 'Close',
     'image.rendering': 'Rendering ECG image...',
     'image.error': 'Render error',
-    'image.mode.label': 'Render format',
-    'image.mode.original': 'Original',
-    'image.mode.doubled': 'Doubled (2× signal)',
+    'image.transform.extended': 'The source signal ({src} s per lead) has been repeated to reach the {tgt} s required by the {layout} format.',
+    'image.transform.truncated': 'The {layout} format only keeps the first {tgt} seconds of the source signal ({src} s per lead).',
 
     // Info card
     'info.principle.title': 'Principle',
-    'info.principle.text': 'This tool extracts the electrical signal from a vectorized PDF ECG, then converts it into standard digital formats. Extraction runs entirely in your browser — no patient data is extracted or transmitted.',
+    'info.principle.text': 'ECG mind converts your ECGs into standard digital formats, usable in clinical practice and research. Today the tool handles vectorized PDFs; more input and output types will follow. Patient data never leaves your machine — only the digital signal is transmitted to the server, and only for the time the conversion takes.',
     'info.upload.title': 'Upload',
-    'info.upload.text': 'Drop a vectorized (not scanned) ECG PDF. Major manufacturers are supported: Schiller, GE MUSE, Philips, Mortara/Burdick, and others. The file is read locally by your browser.',
+    'info.upload.text': 'Drop an ECG. For now, accepted files are vectorized PDFs from major manufacturers (GE MUSE, Schiller, Mortara/Burdick…). Support for source data (proprietary XML) and images is under development.',
     'info.extract.title': 'Extraction',
-    'info.extract.text': 'The signal is extracted by analyzing vector paths (SVG paths) embedded in the PDF. All 12 standard leads are automatically identified along with their calibration (gain, speed).',
+    'info.extract.text': 'The signal is extracted locally by your browser. The numeric values are then sent to the server, which converts them to the standard XML format and sends them back for display.',
     'info.convert.title': 'Conversion',
-    'info.convert.text': 'The extracted signal can be converted into 6 formats: EDF+ (open standard), WFDB (PhysioNet), DICOM (hospital), HDF5 (scientific), WebP (4K image), HL7 aECG (FDA). Conversion is performed server-side.',
+    'info.convert.text': 'Three outputs are available on demand: an HL7 aECG XML file (the standard format for storage, interoperability and research), an anonymized vectorized PDF, and an image. You only generate what you need.',
     'info.privacy.title': 'Privacy',
-    'info.privacy.text': 'Only the raw digital signal is sent to the server for conversion. Patient data (name, date of birth, identifiers) contained in the PDF is never extracted or transmitted.',
+    'info.privacy.text': 'Patient data present in the source file (name, date of birth, identifiers) is never transmitted to the server. Only the numeric signal samples are, and only for the time the conversion takes.',
 
     // Header buttons
     'btn.home': 'Home',
-    'btn.devMode': 'Developer mode',
 
     // Anonymization
     'anon.title': 'PDF Anonymization',
@@ -269,23 +271,27 @@ const translations = {
     'anon.removed': 'text items removed',
     'anon.error': 'Error',
 
-    // Report extraction issue
-    'report.btn': 'Report a malfunction',
-    'report.title': 'Report incorrect extraction',
-    'report.body': 'To improve the extraction algorithm, we need the source PDF. The file will be anonymized (all patient data removed) before being sent to the server.',
+    // Unsupported file type popup
+    'unsupported.title': 'Unsupported file type',
+    'unsupported.detected': 'Detected format',
+    'unsupported.close': 'Close',
+    'unsupported.accepted': 'Currently accepted formats: vectorized PDF from an ECG device (GE MUSE, Schiller, Mortara/Burdick…).',
+    'unsupported.pdf-raster': 'This file is a PDF, but it is a raster PDF (scan or bitmap export), not a vectorized one. ECG mind needs the trace as vector paths to reconstruct the signal.',
+    'unsupported.image': 'Conversion from images (JPEG, PNG, etc.) is still under development.',
+    'unsupported.xml-ecg': 'Conversion from source XML data is still under development.',
+    'unsupported.xml-other': 'This XML file was not recognized as an ECG.',
+    'unsupported.dicom': 'Conversion from DICOM Waveform is still under development.',
+    'unsupported.unknown': 'This file type is not supported.',
+
+    // Report unsupported ECG type
+    'report.btn': 'Report an unsupported ECG',
+    'report.title': 'Help us improve ECG mind',
+    'report.body': 'ECG mind is still under development and not every format is recognized yet. If your ECG doesn\'t display correctly, you can send it to us in one click: we\'ll use it to improve the algorithm and add support for your ECG type in a future release. The file is fully anonymized (all patient data removed) before any transmission.',
     'report.confirm': 'Anonymize & send',
     'report.cancel': 'Cancel',
     'report.sending': 'Anonymizing & sending...',
-    'report.done': 'PDF sent — thank you!',
+    'report.done': 'Thank you! Your ECG will help us improve the tool.',
     'report.error': 'Error sending file',
-
-    // Dev mode
-    'dev.pdfSource': 'PDF Source',
-    'dev.extractedSignals': 'Extracted Signals',
-    'dev.details': 'Extraction Details',
-    'dev.channelDetails': 'Channel Details',
-    'dev.samples': 'samples',
-    'dev.pageDimensions': 'Page Dimensions',
   },
 } as const;
 

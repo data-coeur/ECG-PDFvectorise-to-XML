@@ -4,7 +4,7 @@ import translations, { type Lang, type TranslationKey } from './translations';
 interface LanguageCtx {
   lang: Lang;
   setLang: (l: Lang) => void;
-  t: (key: TranslationKey) => string;
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
 }
 
 const Ctx = createContext<LanguageCtx>(null!);
@@ -20,7 +20,15 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: TranslationKey) => translations[lang][key] ?? key,
+    (key: TranslationKey, params?: Record<string, string | number>) => {
+      let str: string = translations[lang][key] ?? key;
+      if (params) {
+        for (const [k, v] of Object.entries(params)) {
+          str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+        }
+      }
+      return str;
+    },
     [lang],
   );
 

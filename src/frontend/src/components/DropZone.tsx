@@ -2,20 +2,19 @@ import { useRef, useState, useCallback } from 'react';
 import { useLanguage } from '../i18n';
 
 interface Props {
-  onFile: (file: File) => void;
-  onMultiple?: () => void;
+  onFiles: (files: File[]) => void;
   disabled?: boolean;
 }
 
-export default function DropZone({ onFile, onMultiple, disabled }: Props) {
+export default function DropZone({ onFiles, disabled }: Props) {
   const [over, setOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useLanguage();
 
-  const handleFile = useCallback((f: File) => {
-    if (!/\.pdf$/i.test(f.name)) return;
-    onFile(f);
-  }, [onFile]);
+  const handleDrop = useCallback((fileList: FileList) => {
+    if (!fileList.length) return;
+    onFiles(Array.from(fileList));
+  }, [onFiles]);
 
   return (
     <div
@@ -29,9 +28,7 @@ export default function DropZone({ onFile, onMultiple, disabled }: Props) {
       onDragLeave={() => setOver(false)}
       onDrop={e => {
         e.preventDefault(); setOver(false);
-        const files = e.dataTransfer.files;
-        if (files.length > 1 && onMultiple) { onMultiple(); return; }
-        if (files.length) handleFile(files[0]);
+        handleDrop(e.dataTransfer.files);
       }}
     >
       {/* Animated ECG trace background — CSS GPU-accelerated */}
@@ -64,14 +61,11 @@ export default function DropZone({ onFile, onMultiple, disabled }: Props) {
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.PDF"
         multiple
         className="hidden"
         onChange={e => {
-          const files = e.target.files;
-          if (!files?.length) return;
-          if (files.length > 1 && onMultiple) { onMultiple(); e.target.value = ''; return; }
-          handleFile(files[0]);
+          if (e.target.files?.length) handleDrop(e.target.files);
+          e.target.value = '';
         }}
       />
     </div>

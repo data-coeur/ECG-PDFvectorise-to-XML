@@ -24,16 +24,11 @@ export default function BatchConversionModal({ open, onClose }: Props) {
         className="glass-card my-auto w-full max-w-md max-h-[90vh] overflow-y-auto p-6"
         onClick={e => e.stopPropagation()}
       >
-        <div className="mb-2 flex items-center gap-2">
-          <h3 className="text-base font-semibold text-slate-700">
-            {t('batch.title' as TranslationKey)}
-          </h3>
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700">
-            {t('batch.wipBadge' as TranslationKey)}
-          </span>
-        </div>
+        <h3 className="mb-2 text-base font-semibold text-slate-700">
+          {t('batch.title' as TranslationKey)}
+        </h3>
         <p className="mb-5 text-sm text-slate-500">
-          {t('batch.subtitle' as TranslationKey)}
+          {t('batch.standard.subtitle' as TranslationKey)}
         </p>
 
         <div className="space-y-3">

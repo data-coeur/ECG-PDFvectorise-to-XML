@@ -73,3 +73,12 @@ export interface FormatInfo {
   badgeText: string;
   desc: string;
 }
+
+// Batch processing — one entry per dropped file.
+export interface BatchItem {
+  id: string;
+  file: File;
+  status: 'queued' | 'detecting' | 'extracting' | 'done' | 'error';
+  ecgData: ECGData | null;
+  error: string | null;
+}

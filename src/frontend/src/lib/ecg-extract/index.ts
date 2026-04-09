@@ -10,6 +10,7 @@ import type { Label, ECGData, ECGChannel } from '../types';
 import { LEAD_NAMES, LEAD_ALIASES } from './constants';
 import { detectManufacturer, resolveProfile } from './profiles';
 import { parse } from './parse-paths';
+import { normalizeOrientation, rotatePoint } from './normalize-orientation';
 import { idTraces } from './identify-traces';
 import { detectLayout } from './detect-layout';
 import { assign } from './assign-leads';
@@ -29,11 +30,15 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   const tc = await pg.getTextContent();
 
   // Step 1: Parse all vector paths from the PDF
-  const allPolylines = parse(ops, vp);
+  const rawPolylines = parse(ops, vp);
+
+  // Step 1b: Rectify content-stream rotation (90/180/270°) so downstream stages
+  // can keep assuming time runs along x. Generic, manufacturer-agnostic.
+  const { polylines: allPolylines, vp: workVp, rotation } = normalizeOrientation(rawPolylines, vp);
 
   // Step 2: Detect manufacturer from PDF content (metadata + page size + vector signatures)
   const meta = await pdf.getMetadata();
-  const mfrName = detectManufacturer(meta.info as Record<string, string>, vp, allPolylines);
+  const mfrName = detectManufacturer(meta.info as Record<string, string>, workVp, allPolylines);
   const profile = resolveProfile(mfrName);
 
   // Step 3: Extract text labels (lead names: I, II, V1...)
@@ -51,7 +56,10 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
       if (seenLabels.has(normalized)) continue;
       seenLabels.add(normalized);
       const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
-      labels.push({ text: normalized, x, y });
+      // Apply the same rotation we applied to the polylines, so labels stay
+      // co-located with the traces they belong to.
+      const rp = rotatePoint({ x, y }, rotation, vp.width, vp.height);
+      labels.push({ text: normalized, x: rp.x, y: rp.y });
     }
   }
 
@@ -60,14 +68,14 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   if (!traces.length) return null;
 
   // Step 4: Detect grid lines from the PDF
-  const grid = extractGridLines(allPolylines, vp, profile);
+  const grid = extractGridLines(allPolylines, workVp, profile);
   if (!grid) throw new Error('GRID_NOT_DETECTED');
 
   // Step 5: Compute physical scale from grid spacing
   const scale = computeScaleFromGrid(grid);
 
   // Step 6: Detect page layout
-  const layout = detectLayout(traces, vp, profile);
+  const layout = detectLayout(traces, workVp, profile);
 
   // Step 7: Assign each trace to a lead name
   const assigned = assign(traces, labels, layout, profile);
