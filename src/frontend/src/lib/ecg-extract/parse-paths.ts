@@ -67,6 +67,11 @@ function parseWithCTM(ops: { fnArray: number[]; argsArray: unknown[][] }, vpT: n
       case OPS.transform: ctm = matMul(ctm, a); break;
       case OPS.setStrokeRGBColor: col = normalizeColor([a[0], a[1], a[2]]); break;
       case OPS.setStrokeGray: col = normalizeColor([a[0], a[0], a[0]]); break;
+      // SC/SCN operators (DeviceRGB CS then SC r g b) → pdfjs emits setStrokeColorN
+      case OPS.setStrokeColorN:
+        if (a.length >= 3) col = normalizeColor([a[0], a[1], a[2]]);
+        else if (a.length === 1) col = normalizeColor([a[0], a[0], a[0]]);
+        break;
       case OPS.setLineWidth: w = a[0]; break;
       case OPS.moveTo: fl(); addPt(a[0], a[1]); break;
       case OPS.lineTo: addPt(a[0], a[1]); break;
@@ -105,6 +110,10 @@ function parseViewportOnly(ops: { fnArray: number[]; argsArray: unknown[][] }, v
     switch (f) {
       case OPS.setStrokeRGBColor: col = normalizeColor([a[0], a[1], a[2]]); break;
       case OPS.setStrokeGray: col = normalizeColor([a[0], a[0], a[0]]); break;
+      case OPS.setStrokeColorN:
+        if (a.length >= 3) col = normalizeColor([a[0], a[1], a[2]]);
+        else if (a.length === 1) col = normalizeColor([a[0], a[0], a[0]]);
+        break;
       case OPS.setLineWidth: w = a[0]; break;
       case OPS.moveTo: fl(); addPt(a[0], a[1]); break;
       case OPS.lineTo: addPt(a[0], a[1]); break;

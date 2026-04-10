@@ -155,16 +155,23 @@ ecgRouter.post('/render-image', async (req, res) => {
 
     const targetRaw = parseFloat(req.query.target as string);
     const target = Number.isFinite(targetRaw) && targetRaw > 0 ? targetRaw : null;
+    const format = (req.query.format as string) || null;
 
     let channels: Channel[] = data.channels;
     if (target !== null) {
-      channels = channels.map((c: Channel) => fitChannelToDuration(c, target));
+      // Only reshape standard leads — rhythm strip channels keep their full
+      // duration so the renderer can display the complete long recording.
+      channels = channels.map((c: Channel) =>
+        /_rhythm$/i.test(c.name) ? c : fitChannelToDuration(c, target)
+      );
     }
     const { resampled, sampleRate, samplesPerChArr } = resample(channels);
     writeMuseXml(channels, resampled, samplesPerChArr, sampleRate, xmlPath);
 
     const scriptPath = path.resolve(__dirname, '../../scripts/render_ecg_image.py');
-    const { stderr } = await execFileAsync('python3', [scriptPath, xmlPath, imgPath], {
+    const args = [scriptPath, xmlPath, imgPath];
+    if (format) args.push(format);
+    const { stderr } = await execFileAsync('python3', args, {
       timeout: 30000,
       maxBuffer: 100 * 1024 * 1024,
     });

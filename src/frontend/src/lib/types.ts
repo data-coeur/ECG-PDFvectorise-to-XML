@@ -51,6 +51,9 @@ export interface ECGData {
   scale: { mm_per_s: number; mm_per_mV: number; pts_per_mm: number };
   grid: GridInfo;
   channels: ECGChannel[];
+  /** True when the source PDF provided a dedicated long rhythm strip channel
+   *  (e.g. Mortara 12+1). False when lead II was cloned to fabricate one. */
+  hasNativeRhythm: boolean;
 }
 
 export interface ServerResponse {
@@ -81,4 +84,5 @@ export interface BatchItem {
   status: 'queued' | 'detecting' | 'extracting' | 'done' | 'error';
   ecgData: ECGData | null;
   error: string | null;
+  warning: string | null;
 }

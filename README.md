@@ -1,28 +1,31 @@
 # ECG Pipeline
 
-Pipeline complet d'analyse ECG : upload de PDF ECG vectorisé → extraction du signal → diagnostic automatisé par IA.
+Pipeline complet d'analyse ECG : upload de PDF ECG vectorisé → extraction du signal → conversion en formats standards → diagnostic automatisé par IA.
 
-Le projet est en **développement actif** (phase proof-of-concept). L'extracteur de signal fonctionne, le backend DeepECG répond mais le moteur IA n'est pas encore actif (nécessite adaptation CPU ou GPU).
+Le projet est en **développement actif**. L'extracteur de signal fonctionne avec support multi-constructeurs et traitement par lot.
 
 ## Architecture
 
 ```
-PDF ECG (vectorisé)
+PDF ECG (1 à 100 fichiers)
     │
     ▼
-┌──────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Web UI      │────▶│  ecg_receive.php  │────▶│  DeepECG (API)  │
-│  index.html  │     │  EDF+/WFDB/DICOM │     │  FastAPI + AI    │
-└──────────────┘     └──────────────────┘     └─────────────────┘
-    extraction           sauvegarde              diagnostic
-    JS côté client       5 formats               77 classes
+┌──────────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  React UI            │────▶│  Express Backend      │     │  DeepECG (API)  │
+│  Extraction locale   │     │  HL7 aECG XML        │     │  FastAPI + AI    │
+│  pdfjs + profiles    │     │  Image (matplotlib)   │     │  (à intégrer)   │
+│  Batch processing    │     │  Python ecgmind       │     │                 │
+└──────────────────────┘     └──────────────────────┘     └─────────────────┘
+  détection de type           conversion serveur            diagnostic
+  extraction signal           rendu image ECG               77 classes
+  anonymisation PDF           export HL7 aECG
 ```
 
 ### Services Docker
 
 | Service | Conteneur | Description |
 |---------|-----------|-------------|
-| **web** | `ecg-dev-web` | PHP 8.3 Apache — UI d'extraction + réception signal |
+| **web** | `ecg-dev-web` | Node.js (Express) — React frontend + API backend (conversion, rendu image) |
 | **database** | `ecg-dev-database` | MySQL 8.0 |
 | **phpmyadmin** | `ecg-dev-phpmyadmin` | Admin base de données |
 | **deepecg-backend** | `ecg-dev-deepecg` | FastAPI Python — API d'analyse ECG |
@@ -40,17 +43,41 @@ PDF ECG (vectorisé)
 
 ## État d'avancement
 
-- [x] Extracteur ECG (PDF vectorisé → signal JS côté client)
-- [x] Récepteur signal PHP (sauvegarde EDF+, WFDB, DICOM, HDF5, WebP)
+### Extracteur ECG (frontend React)
+- [x] Extraction du signal depuis PDF vectorisé (pdfjs côté client)
+- [x] Profils constructeurs : GE MUSE, Schiller (grille rouge), Schiller CS (grille rose, opérateurs SC), Mortara/Burdick, PTB-XL
+- [x] Normalisation d'orientation : détection et correction auto des rotations 90/180/270°
+- [x] Détection de type de fichier : PDF vectoriel, PDF raster, images, XML ECG, DICOM, inconnu
+- [x] Traitement par lot : file séquentielle jusqu'à 100 fichiers, bouton stop, estimation du temps, pré-rendu des images
+- [x] Sélecteur de format de page : 3×4, 3×4+1, 6×2, 6×2+1, 12×1 (avec logique rhythm strip)
+- [x] Viewer PDF original côte à côte avec l'image rendue
+- [x] Timeout 30s sur l'extraction pour éviter les boucles infinies
+- [x] PDFs multi-pages : extraction page 1, avertissement pour les pages ignorées
+
+### Formats de sortie
+- [x] HL7 aECG XML (conversion serveur)
+- [x] Image ECG (rendu matplotlib serveur, format 304.8 DPI)
+- [x] PDF Vectoriel (brut ou anonymisé, côté client)
+- [x] Téléchargement par lot : fichier par fichier ou ZIP (JSZip côté client)
+
+### Signalement et qualité
+- [x] Bouton "Signaler un ECG non supporté" (anonymisation + upload)
+- [x] Popups d'erreur dédiées par type de fichier non supporté
+
+### Infrastructure
 - [x] DeepECG backend opérationnel (FastAPI)
 - [x] DeepECG frontend React déployé
 - [x] Infrastructure Docker complète (DinD isolé) + reverse proxy nginx + SSL
 - [x] MCP servers pour développement via Claude.ai
 - [x] Navigation automatisée Playwright pour tests
-- [x] Accès SFTP pour édition directe des fichiers source
+
+### À faire
 - [ ] Moteur IA DeepECG — adaptation CPU (actuellement profil GPU uniquement)
 - [ ] Intégration complète : extracteur → analyse DeepECG → résultats
 - [ ] Stockage des résultats en MySQL
+- [ ] Support des PDFs avec positionnement point-par-point (Philips/Cardioline, 100K+ opérateurs cm)
+- [ ] Entrée depuis données sources XML (GE MUSE RestingECG, HL7 aECG)
+- [ ] Entrée depuis images (ECGs scannés)
 
 ## Développement (Vibe Coding)
 

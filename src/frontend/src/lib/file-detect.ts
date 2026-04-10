@@ -83,24 +83,34 @@ async function inspectPdf(file: File): Promise<Detected> {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
 
-    if (pdf.numPages > 1) {
-      return { kind: 'pdf-multi', detail: `${pdf.numPages} pages` };
-    }
-
+    const numPages = pdf.numPages;
     const page = await pdf.getPage(1);
     const ops = await page.getOperatorList();
     const OPS = pdfjsLib.OPS;
 
+    // Count vector path operations. pdfjs batches path ops into constructPath
+    // operators — each one contains an array of sub-operations (moveTo, lineTo…).
+    // We count the sub-operations inside, not just the top-level op.
     let vectorCount = 0;
     for (let i = 0; i < ops.fnArray.length; i++) {
-      if (ops.fnArray[i] === OPS.constructPath) vectorCount++;
+      const op = ops.fnArray[i];
+      if (op === OPS.moveTo || op === OPS.lineTo) {
+        vectorCount++;
+      } else if (op === OPS.constructPath) {
+        const subOps = (ops.argsArray[i] as [number[], number[]])[0];
+        vectorCount += subOps.length;
+      }
     }
-    // A real vectorial ECG has hundreds to thousands of path constructions.
-    // A scanned PDF has near-zero (the page is one big image XObject).
-    return { kind: vectorCount >= 50 ? 'pdf-vector' : 'pdf-raster' };
-  } catch {
-    // Malformed PDF or pdfjs error → treat as raster so the user gets the
-    // dedicated message instead of an opaque extractor crash.
+    console.warn(`[ECG detect] Page 1: ${ops.fnArray.length} ops, ${vectorCount} vector sub-ops, pages=${numPages}`);
+    if (vectorCount < 50) return { kind: 'pdf-raster' };
+    // Flag multi-page PDFs so the UI can warn the user that only page 1
+    // was processed — but still let extraction proceed (don't block).
+    if (numPages > 1) {
+      return { kind: 'pdf-vector', detail: `${numPages} pages` };
+    }
+    return { kind: 'pdf-vector' };
+  } catch (err) {
+    console.warn('[ECG detect] inspectPdf crashed:', err);
     return { kind: 'pdf-raster' };
   }
 }

@@ -32,6 +32,16 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   // Step 1: Parse all vector paths from the PDF
   const rawPolylines = parse(ops, vp);
 
+  // ── Diagnostic (temporary) ──
+  const colorBuckets: Record<string, number> = {};
+  for (const p of rawPolylines) {
+    const key = `${p.col[0].toFixed(2)},${p.col[1].toFixed(2)},${p.col[2].toFixed(2)}`;
+    colorBuckets[key] = (colorBuckets[key] || 0) + 1;
+  }
+  console.log(`[ECG] Raw polylines: ${rawPolylines.length}, colors:`, colorBuckets);
+  console.log(`[ECG] Viewport: ${vp.width.toFixed(0)}x${vp.height.toFixed(0)}, ops: ${ops.fnArray.length}`);
+  // ── End diagnostic ──
+
   // Step 1b: Rectify content-stream rotation (90/180/270°) so downstream stages
   // can keep assuming time runs along x. Generic, manufacturer-agnostic.
   const { polylines: allPolylines, vp: workVp, rotation } = normalizeOrientation(rawPolylines, vp);
@@ -40,6 +50,7 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   const meta = await pdf.getMetadata();
   const mfrName = detectManufacturer(meta.info as Record<string, string>, workVp, allPolylines);
   const profile = resolveProfile(mfrName);
+  console.log(`[ECG] Manufacturer: ${mfrName}, rotation: ${rotation}°, traces after normalize: ${allPolylines.length}`);
 
   // Step 3: Extract text labels (lead names: I, II, V1...)
   // Merge global aliases with profile-specific extra aliases
@@ -65,6 +76,11 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
 
   // Step 3: Identify ECG signal traces
   const traces = idTraces(allPolylines, profile);
+  console.log(`[ECG] idTraces: ${traces.length} traces found (threshold: black<${profile.trace.blackThreshold}, minPts>${profile.trace.minPoints})`);
+  if (traces.length) {
+    const top5 = traces.slice(0, 5).map(t => `${t.pts.length}pts col=[${t.col.map(c => c.toFixed(2)).join(',')}]`);
+    console.log(`[ECG] Top traces: ${top5.join(' | ')}`);
+  }
   if (!traces.length) return null;
 
   // Step 4: Detect grid lines from the PDF
@@ -110,6 +126,7 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
 
   // Build the rhythm strip channel (target ~10s duration)
   const TARGET_RHYTHM_DURATION_S = 10;
+  const hasNativeRhythm = assigned.some(c => /_rhythm$/i.test(c.name));
   const rhythmChannel = buildRhythmStripChannel(assigned, standardChannels, toChannel, TARGET_RHYTHM_DURATION_S);
 
   return {
@@ -120,6 +137,7 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
     scale: { mm_per_s: 25, mm_per_mV: 10, pts_per_mm: Math.round(scale.pmm * 100) / 100 },
     grid,
     channels: rhythmChannel ? [...standardChannels, rhythmChannel] : standardChannels,
+    hasNativeRhythm,
   };
 }
 

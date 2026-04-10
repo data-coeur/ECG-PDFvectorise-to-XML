@@ -86,7 +86,7 @@ def _read_rhythm_strip_signal(input_path):
     return None
 
 
-def generate_ecg_image(input_path, output_path, output_format="webp"):
+def generate_ecg_image(input_path, output_path, output_format="webp", format_override=None):
     """
     Generate a standardized ECG image from an ECG data file.
 
@@ -96,6 +96,8 @@ def generate_ecg_image(input_path, output_path, output_format="webp"):
         input_path: Path to the input ECG file.
         output_path: Path for the output image file.
         output_format: 'webp' (default) or 'png'.
+        format_override: If set (e.g. '3x4', '6x2+1'), overrides auto-detection
+                         from signal duration.
 
     Returns:
         str: Path to the saved image.
@@ -104,12 +106,12 @@ def generate_ecg_image(input_path, output_path, output_format="webp"):
     source = create_data_source(input_path)
     ecg_id, leads_data = next(iter(source))
 
-    # If the XML carries a dedicated rhythm strip channel ("II_rhythm" or similar),
-    # substitute lead II with this longer signal. The renderer will:
-    #  - show the first slice_samples (= short duration) in the II grid cell
-    #  - show extra_samples (= slice_samples × n_cols ≈ full row width) on the rhythm row
-    # Since the rhythm signal's first samples are identical to the regular lead II,
-    # the grid cell remains correct while the rhythm strip uses the full long signal.
+    # If the XML carries a dedicated rhythm strip channel ("II_rhythm"),
+    # substitute lead II with this longer signal. The renderer handles this:
+    #  - Grid cell for lead II: shows signal[0:slice_samples] (first 2.5s)
+    #    via _col_slice_idx with _independent_cells=True
+    #  - Rhythm row (is_extra_line): draws signal[:extra_samples] across
+    #    the full page width in one pass, ignoring _independent_cells
     rhythm_signal = _read_rhythm_strip_signal(input_path)
     if rhythm_signal is not None and "II" in leads_data:
         if len(rhythm_signal) > len(leads_data["II"]):
@@ -133,11 +135,10 @@ def generate_ecg_image(input_path, output_path, output_format="webp"):
     # the signal between columns — each cell should show its lead's full duration.
     config["_independent_cells"] = True
 
-    # Choose layout based on signal duration so each cell fits its data well:
-    #   - short signals (≤ 4s): 3x4+1 (4 narrow cols, typical of MUSE/Mortara 12-lead PDFs)
-    #   - medium signals (4-8s): 6x2+1 (2 wider cols)
-    #   - long signals (> 8s): 12x1 (each lead full width)
-    if duration is not None:
+    # Choose layout: explicit override from the frontend, or auto-detect from duration
+    if format_override and format_override in LAYOUT_TEMPLATES:
+        config["format_choice"] = format_override
+    elif duration is not None:
         if duration <= 4:
             config["format_choice"] = "3x4+1"
         elif duration <= 8:

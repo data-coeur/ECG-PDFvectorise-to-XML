@@ -7,6 +7,7 @@
 import type { Polyline } from '../../types';
 import { GE_MUSE } from './manufacturers/ge-muse';
 import { SCHILLER } from './manufacturers/schiller';
+import { SCHILLER_CS } from './manufacturers/schiller-cs';
 import { MORTARA_BURDICK } from './manufacturers/mortara-burdick';
 import { PTBXL } from './manufacturers/ptbxl';
 
@@ -105,11 +106,18 @@ export function detectManufacturer(
   const maxDim = Math.max(pageSize.width, pageSize.height);
   if (maxDim > 2000) return 'Mortara/Burdick';
 
-  // 3. Grid color (Schiller uses pure red grid lines)
+  // 3. Grid color
+  // Standard Schiller: pure red grid (R>0.9, G<0.1, B<0.1)
   const hasRedGrid = polylines.some(p =>
     p.col[0] > 0.9 && p.col[1] < 0.1 && p.col[2] < 0.1 && p.pts.length >= 2
   );
   if (hasRedGrid) return 'Schiller';
+
+  // Schiller CS variant: pink grid (R~0.9, G~0.7, B~0.7) — uses CS/SC color ops
+  const hasPinkGrid = polylines.some(p =>
+    p.col[0] > 0.8 && p.col[1] > 0.5 && p.col[1] < 0.8 && p.col[2] > 0.5 && p.col[2] < 0.8 && p.pts.length >= 2
+  );
+  if (hasPinkGrid) return 'Schiller CS';
 
   return 'Unknown';
 }
@@ -118,6 +126,7 @@ export function detectManufacturer(
 const REGISTRY: Record<string, DeepPartial<ManufacturerProfile>> = {
   'GE MUSE': GE_MUSE,
   'Schiller': SCHILLER,
+  'Schiller CS': SCHILLER_CS,
   'Mortara/Burdick': MORTARA_BURDICK,
   'PTB-XL': PTBXL,
 };

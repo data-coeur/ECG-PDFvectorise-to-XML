@@ -9,13 +9,26 @@ import DropZone from './components/DropZone';
 import BatchConversionButton from './components/BatchConversionButton';
 import BatchConversionModal from './components/BatchConversionModal';
 import BatchPanel from './components/BatchPanel';
-import StatusBar from './components/StatusBar';
+// StatusBar removed — manufacturer/channels/layout info no longer shown inline
 import ECGImageView, { clearImageCache, preloadImage } from './components/ECGImageView';
 import FormatCards from './components/FormatCards';
 import InfoCard from './components/InfoCard';
 import ReportModal from './components/ReportModal';
 import UnsupportedFileModal from './components/UnsupportedFileModal';
 import { detectFileType, type Detected } from './lib/file-detect';
+
+const EXTRACT_TIMEOUT_MS = 30_000;
+
+/** Run a promise with a timeout. Rejects with a clear message on expiry. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`TIMEOUT: ${label}`)), ms);
+    promise.then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 export default function App() {
   const { t } = useLanguage();
@@ -30,7 +43,7 @@ export default function App() {
   // Derived: the currently-viewed item
   const activeItem = useMemo(() => batch.find(i => i.id === activeId) ?? null, [batch, activeId]);
   const ecgData = activeItem?.ecgData ?? null;
-  const pdfFile = activeItem?.file ?? null;
+  const pdfFile = activeItem?.file ?? batch[0]?.file ?? null;
 
   // ── Per-item UI flags (converting / downloaded) ──────────────────────────
   const [convertingIds, setConvertingIds] = useState<Set<string>>(new Set());
@@ -38,35 +51,18 @@ export default function App() {
   const converting = activeId ? convertingIds.has(activeId) : false;
   const hasDownload = activeId ? downloadedIds.has(activeId) : false;
 
-  // ── Status bar — shows info about the active item ────────────────────────
-  const status = useMemo(() => {
-    if (!activeItem) {
-      const running = batch.find(i => i.status === 'extracting' || i.status === 'detecting');
-      if (running) return { msg: t('status.extracting'), type: '' as const, loading: true };
-      return { msg: '', type: '' as '' | 'ok' | 'err', loading: false };
-    }
-    if (activeItem.status === 'extracting' || activeItem.status === 'detecting')
-      return { msg: t('status.extracting'), type: '' as const, loading: true };
-    if (activeItem.status === 'error')
-      return { msg: activeItem.error ?? t('status.error'), type: 'err' as const, loading: false };
-    if (activeItem.ecgData) {
-      const r = activeItem.ecgData;
-      const layoutLabel = t(`layout.${r.layout}` as TranslationKey) || r.layout;
-      const count = r.channels.filter(c => !/_rhythm$/i.test(c.name)).length;
-      return { msg: `${count} ${t('status.channels')} · ${r.manufacturer} · ${layoutLabel}`, type: 'ok' as const, loading: false };
-    }
-    return { msg: '', type: '' as '' | 'ok' | 'err', loading: false };
-  }, [activeItem, batch, t]);
+  // ── Derived flags ─────────────────────────────────────────────────────────
+  const statusLoading = activeItem?.status === 'extracting' || activeItem?.status === 'detecting';
 
   // ── Step indicator ───────────────────────────────────────────────────────
   const { currentStep, completedSteps } = useMemo<{ currentStep: Step; completedSteps: Step[] }>(() => {
     if (hasDownload) return { currentStep: 'download', completedSteps: ['upload', 'extract', 'send', 'download'] };
     if (converting) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
-    if (ecgData && !status.loading) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
-    if (status.loading) return { currentStep: 'extract', completedSteps: ['upload'] };
+    if (ecgData && !statusLoading) return { currentStep: 'send', completedSteps: ['upload', 'extract'] };
+    if (statusLoading) return { currentStep: 'extract', completedSteps: ['upload'] };
     if (batch.length > 0) return { currentStep: 'extract', completedSteps: ['upload'] };
     return { currentStep: 'upload', completedSteps: [] };
-  }, [ecgData, status.loading, converting, hasDownload, batch.length]);
+  }, [ecgData, statusLoading, converting, hasDownload, batch.length]);
 
   // ── Modal state ──────────────────────────────────────────────────────────
   const [showReport, setShowReport] = useState(false);
@@ -86,7 +82,6 @@ export default function App() {
     let firstDoneId: string | null = null;
     for (const item of items) {
       if (abortRef.current) {
-        // Mark remaining items as stopped so the user sees why they weren't processed
         updateItem(item.id, { status: 'error', error: t('batch.stopped' as TranslationKey) });
         continue;
       }
@@ -94,24 +89,27 @@ export default function App() {
       updateItem(item.id, { status: 'detecting' });
       const detected = await detectFileType(item.file);
       if (abortRef.current) { updateItem(item.id, { status: 'error', error: t('batch.stopped' as TranslationKey) }); continue; }
-      if (detected.kind === 'pdf-multi') {
-        updateItem(item.id, { status: 'error', error: 'PDF multi-pages' });
-        continue;
-      }
       if (detected.kind !== 'pdf-vector') {
         updateItem(item.id, { status: 'error', error: detected.detail ?? detected.kind });
         continue;
       }
-      // Extract
+      // Extract (with timeout to prevent infinite loops on malformed PDFs)
       updateItem(item.id, { status: 'extracting' });
       try {
-        const result = await extractFromPdf(item.file);
+        const result = await withTimeout(
+          extractFromPdf(item.file),
+          EXTRACT_TIMEOUT_MS,
+          item.file.name,
+        );
         if (abortRef.current) { updateItem(item.id, { status: 'error', error: t('batch.stopped' as TranslationKey) }); continue; }
         if (!result || !result.channels.length) {
           updateItem(item.id, { status: 'error', error: t('status.noSignal') });
           continue;
         }
-        updateItem(item.id, { status: 'done', ecgData: result });
+        const warning = detected.detail
+          ? `${detected.detail} — ${t('status.page1Only' as TranslationKey)}`
+          : null;
+        updateItem(item.id, { status: 'done', ecgData: result, warning });
         // Option C: pre-render preview image in background so it's cached
         // by the time the user navigates to this item. Fire-and-forget.
         preloadImage(item.id, result);
@@ -121,10 +119,11 @@ export default function App() {
         }
       } catch (e) {
         const msg = (e as Error).message;
-        updateItem(item.id, {
-          status: 'error',
-          error: msg === 'GRID_NOT_DETECTED' ? t('status.noGrid' as TranslationKey) : msg,
-        });
+        let error: string;
+        if (msg.startsWith('TIMEOUT:')) error = t('status.timeout' as TranslationKey);
+        else if (msg === 'GRID_NOT_DETECTED') error = t('status.noGrid' as TranslationKey);
+        else error = msg;
+        updateItem(item.id, { status: 'error', error });
       }
     }
     queueRunning.current = false;
@@ -144,6 +143,7 @@ export default function App() {
       status: 'queued' as const,
       ecgData: null,
       error: null,
+      warning: null,
     }));
     setBatch(items);
     setActiveId(null);
@@ -210,22 +210,18 @@ export default function App() {
           </div>
           <DropZone onFiles={handleFiles} disabled={isProcessing} />
 
-          <div className="mt-3 flex items-center gap-3">
-            <StatusBar message={status.msg} type={status.type} loading={status.loading} />
-            {(ecgData || (status.type === 'err' && pdfFile)) && (
-              <div className="ml-auto flex shrink-0 gap-2">
-                {pdfFile && (
-                  <button
-                    className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-1.5 text-xs font-medium text-amber-600 transition-all hover:border-amber-400 hover:bg-amber-100"
-                    onClick={() => setShowReport(true)}
-                    title={t('report.title' as TranslationKey)}
-                  >
-                    {t('report.btn' as TranslationKey)}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          {/* Report button — always visible when a file has been dropped */}
+          {pdfFile && (
+            <div className="mt-3 flex justify-end">
+              <button
+                className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-1.5 text-xs font-medium text-amber-600 transition-all hover:border-amber-400 hover:bg-amber-100"
+                onClick={() => setShowReport(true)}
+                title={t('report.title' as TranslationKey)}
+              >
+                {t('report.btn' as TranslationKey)}
+              </button>
+            </div>
+          )}
 
           {/* Batch file list — visible when multiple files dropped */}
           <BatchPanel items={batch} activeId={activeId} onSelect={setActiveId} onStop={handleStop} />
@@ -244,13 +240,16 @@ export default function App() {
             <div className="mt-5">
               <FormatCards
                 ecgData={ecgData}
-                disabled={status.loading}
+                disabled={statusLoading}
                 onConvertStart={() => setConvertingIds(s => new Set(s).add(activeId))}
                 onConvertDone={() => setDownloadedIds(s => new Set(s).add(activeId))}
+                allEcgData={batch.filter(i => i.status === 'done' && i.ecgData).map(i => i.ecgData!)}
+                pdfFile={pdfFile}
+                allPdfFiles={batch.filter(i => i.status === 'done').map(i => i.file)}
               />
             </div>
             <div className="mt-5 glass-card p-5">
-              <ECGImageView data={ecgData} cacheKey={activeId} />
+              <ECGImageView data={ecgData} cacheKey={activeId} pdfFile={pdfFile} />
             </div>
           </>
         )}

@@ -124,8 +124,6 @@ export function findBaselineForTrace(pts: Point[], calBaselines: number[], lay: 
   const vs = pts.map(p => p[vK]);
   const vCenter = (Math.min(...vs) + Math.max(...vs)) / 2;
 
-  // No calibration pulses detected → fallback to trace center as baseline.
-  // The Python renderer applies its own DC-offset removal so this is just an estimate.
   if (calBaselines.length === 0) return vCenter;
 
   let nearest = calBaselines[0], minDist = Math.abs(vCenter - calBaselines[0]);
