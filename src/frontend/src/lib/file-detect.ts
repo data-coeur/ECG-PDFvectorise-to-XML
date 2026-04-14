@@ -71,43 +71,45 @@ function looksLikeXml(text: string): boolean {
   return trimmed.startsWith('<?xml') || (trimmed.startsWith('<') && !trimmed.startsWith('<!DOCTYPE html'));
 }
 
+// Count vector path operations on a single pdfjs page. pdfjs batches path ops
+// into constructPath operators — each one contains an array of sub-operations
+// (moveTo, lineTo…). We count the sub-operations inside, not just the top-level op.
+// Exported so the multi-page splitter ([pdf-split.ts]) can reuse the same
+// threshold to decide which pages actually contain an ECG.
+export function countVectorOps(ops: { fnArray: number[]; argsArray: unknown[][] }): number {
+  const OPS = pdfjsLib.OPS;
+  let n = 0;
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    const op = ops.fnArray[i];
+    if (op === OPS.moveTo || op === OPS.lineTo) {
+      n++;
+    } else if (op === OPS.constructPath) {
+      const subOps = (ops.argsArray[i] as [number[], number[]])[0];
+      n += subOps.length;
+    }
+  }
+  return n;
+}
+
+/** A page with fewer vector operations than this is considered a raster / cover page. */
+export const MIN_VECTOR_OPS_ECG = 50;
+
 // Distinguish a vectorial PDF (real ECG with vector paths) from a raster PDF
 // (scanned page wrapped in a single image XObject). pdfjs is already loaded
 // statically by the extractor, so this is essentially free.
 //
-// Also flags multi-page PDFs as `pdf-multi`: the extractor only processes
-// page 1, so any merged batch ends up silently failing — better to surface
-// it explicitly and route the user to the batch conversion popup.
+// For multi-page PDFs the splitter ([pdf-split.ts]) takes over: it expands one
+// source file into N per-page PDFs before they ever reach the queue, so here
+// we only need to decide vector vs raster on the first page.
 async function inspectPdf(file: File): Promise<Detected> {
   try {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
-
-    const numPages = pdf.numPages;
     const page = await pdf.getPage(1);
     const ops = await page.getOperatorList();
-    const OPS = pdfjsLib.OPS;
-
-    // Count vector path operations. pdfjs batches path ops into constructPath
-    // operators — each one contains an array of sub-operations (moveTo, lineTo…).
-    // We count the sub-operations inside, not just the top-level op.
-    let vectorCount = 0;
-    for (let i = 0; i < ops.fnArray.length; i++) {
-      const op = ops.fnArray[i];
-      if (op === OPS.moveTo || op === OPS.lineTo) {
-        vectorCount++;
-      } else if (op === OPS.constructPath) {
-        const subOps = (ops.argsArray[i] as [number[], number[]])[0];
-        vectorCount += subOps.length;
-      }
-    }
-    console.warn(`[ECG detect] Page 1: ${ops.fnArray.length} ops, ${vectorCount} vector sub-ops, pages=${numPages}`);
-    if (vectorCount < 50) return { kind: 'pdf-raster' };
-    // Flag multi-page PDFs so the UI can warn the user that only page 1
-    // was processed — but still let extraction proceed (don't block).
-    if (numPages > 1) {
-      return { kind: 'pdf-vector', detail: `${numPages} pages` };
-    }
+    const vectorCount = countVectorOps(ops);
+    console.warn(`[ECG detect] Page 1: ${ops.fnArray.length} ops, ${vectorCount} vector sub-ops, pages=${pdf.numPages}`);
+    if (vectorCount < MIN_VECTOR_OPS_ECG) return { kind: 'pdf-raster' };
     return { kind: 'pdf-vector' };
   } catch (err) {
     console.warn('[ECG detect] inspectPdf crashed:', err);

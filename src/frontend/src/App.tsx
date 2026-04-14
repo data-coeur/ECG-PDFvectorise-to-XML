@@ -16,6 +16,7 @@ import InfoCard from './components/InfoCard';
 import ReportModal from './components/ReportModal';
 import UnsupportedFileModal from './components/UnsupportedFileModal';
 import { detectFileType, type Detected } from './lib/file-detect';
+import { expandMultiPagePdf } from './lib/pdf-split';
 
 const EXTRACT_TIMEOUT_MS = 30_000;
 
@@ -106,9 +107,7 @@ export default function App() {
           updateItem(item.id, { status: 'error', error: t('status.noSignal') });
           continue;
         }
-        const warning = detected.detail
-          ? `${detected.detail} — ${t('status.page1Only' as TranslationKey)}`
-          : null;
+        const warning = detected.detail ?? null;
         updateItem(item.id, { status: 'done', ecgData: result, warning });
         // Option C: pre-render preview image in background so it's cached
         // by the time the user navigates to this item. Fire-and-forget.
@@ -130,14 +129,43 @@ export default function App() {
   }, [t, updateItem]);
 
   // ── File drop handler ────────────────────────────────────────────────────
-  const handleFiles = useCallback((files: File[]) => {
+  const handleFiles = useCallback(async (files: File[]) => {
     // Hard limit: > MAX_BATCH → show the "full database" modal instead
     if (files.length > MAX_BATCH) {
       setShowBatch(true);
       return;
     }
+
+    // Expand multi-page PDFs into one File per ECG-bearing page. Non-PDFs and
+    // single-page PDFs flow through unchanged. pdf-split runs vector-density
+    // detection per page and drops cover / summary pages before they hit the
+    // queue, so each item that ends up in the batch is always a real ECG page.
+    const expanded: File[] = [];
+    for (const f of files) {
+      const looksLikePdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      if (!looksLikePdf) { expanded.push(f); continue; }
+      try {
+        const { files: split } = await expandMultiPagePdf(f);
+        if (split.length > 0) {
+          expanded.push(...split);
+        } else {
+          // Multi-page PDF with no ECG pages — queue the original so the
+          // normal pipeline surfaces a proper error for the user.
+          expanded.push(f);
+        }
+      } catch (err) {
+        console.warn('[handleFiles] pdf-split failed for', f.name, err);
+        expanded.push(f);
+      }
+    }
+
+    if (expanded.length > MAX_BATCH) {
+      setShowBatch(true);
+      return;
+    }
+
     clearImageCache();
-    const items: BatchItem[] = files.map(file => ({
+    const items: BatchItem[] = expanded.map(file => ({
       id: crypto.randomUUID(),
       file,
       status: 'queued' as const,
