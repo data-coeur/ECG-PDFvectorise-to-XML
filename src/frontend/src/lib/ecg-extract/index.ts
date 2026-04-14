@@ -98,13 +98,14 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
 
   // Step 8: Find exact 0mV baselines from calibration pulses (best-effort).
   // Some PDF formats don't have detectable calibration pulses — in that case
-  // findBaselineForTrace falls back to using the trace's vertical center.
+  // findBaselineForTrace falls back to a histogram-mode estimate snapped onto
+  // the nearest major (5 mm) grid line.
   const calBaselines = extractCalibrationBaselines(allPolylines, scale, layout, profile);
 
   // Step 9: Convert each trace from PDF coordinates to millivolts
   // Helper to convert one assigned trace into an ECGChannel object
   const toChannel = (c: typeof assigned[number]): ECGChannel => {
-    const baseline = findBaselineForTrace(c.pts, calBaselines, layout);
+    const baseline = findBaselineForTrace(c.pts, calBaselines, layout, grid);
     const signal = toPhysical(c.pts, scale, layout, baseline);
     let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
     for (const p of c.pts) {

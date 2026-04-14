@@ -41,6 +41,11 @@ export interface GridInfo {
   spacingY: number;
   hLines: number[];
   vLines: number[];
+  // Major (5 mm) grid lines, identified by a thicker stroke width when the
+  // PDF distinguishes minor and major lines that way. Used as snap targets
+  // for baseline detection when no calibration pulse is available.
+  hMajorLines?: number[];
+  vMajorLines?: number[];
 }
 
 export interface ECGData {
