@@ -123,14 +123,18 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
   const [showPdf, setShowPdf] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
-  // Create a blob URL for the original PDF when toggled on
-  if (showPdf && !pdfUrl && pdfFile) {
-    setPdfUrl(URL.createObjectURL(pdfFile));
-  }
-  if (!showPdf && pdfUrl) {
-    URL.revokeObjectURL(pdfUrl);
-    setPdfUrl(null);
-  }
+  // Blob URL for the original PDF — (re)created whenever `showPdf` toggles on
+  // or the underlying `pdfFile` changes (e.g. when switching ECGs in a batch).
+  // The cleanup revokes the previous URL so we don't leak object URLs.
+  useEffect(() => {
+    if (!showPdf || !pdfFile) {
+      setPdfUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(pdfFile);
+    setPdfUrl(url);
+    return () => { URL.revokeObjectURL(url); };
+  }, [showPdf, pdfFile]);
 
   const target = targetForLayout(selectedLayout, sourceDuration);
   const fmt = toBackend(selectedLayout);
