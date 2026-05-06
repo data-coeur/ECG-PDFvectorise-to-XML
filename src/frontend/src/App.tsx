@@ -9,7 +9,6 @@ import DropZone from './components/DropZone';
 import BatchConversionButton from './components/BatchConversionButton';
 import BatchConversionModal from './components/BatchConversionModal';
 import BatchPanel from './components/BatchPanel';
-// StatusBar removed — manufacturer/channels/layout info no longer shown inline
 import ECGImageView, { clearImageCache, preloadImage } from './components/ECGImageView';
 import FormatCards from './components/FormatCards';
 import InfoCard from './components/InfoCard';
