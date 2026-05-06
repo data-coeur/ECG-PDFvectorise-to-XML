@@ -30,3 +30,4 @@ src/frontend/public/
 
 # DeepECG git (submodule-like)
 deepecg/.git/
+.claude/

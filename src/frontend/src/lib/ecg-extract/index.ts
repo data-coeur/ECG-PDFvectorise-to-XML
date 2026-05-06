@@ -25,7 +25,9 @@ import { rectifyOrientation, rotatePoint } from './rectify-orientation';
 import { findSignalTraces } from './find-signal-traces';
 import { detectLayout } from './detect-layout';
 import { pairTracesWithLabels } from './pair-traces-with-labels';
-import { extractGridLines, computeScaleFromGrid, extractCalibrationBaselines, findBaselineForTrace } from './grid-and-scale';
+import { extractGridLines } from './extract-grid';
+import { computeScaleFromGrid } from './compute-scale';
+import { extractCalibrationBaselines, findBaselineForTrace } from './find-baselines';
 import { convertToMv } from './convert-to-mv';
 
 export async function extractFromPdf(file: File): Promise<ECGData | null> {
