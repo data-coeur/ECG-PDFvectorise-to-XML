@@ -11,7 +11,7 @@ import type { Point, Polyline } from '../types';
 
 export interface VpDims { width: number; height: number; }
 
-export interface NormalizedOrientation {
+export interface RectifiedOrientation {
   polylines: Polyline[];
   vp: VpDims;
   rotation: 0 | 90 | 180 | 270;
@@ -47,7 +47,7 @@ function scoreRotation(rot: 0 | 90 | 180 | 270, traces: Polyline[], w: number, h
   return mono;
 }
 
-export function normalizeOrientation(polylines: Polyline[], vp: VpDims): NormalizedOrientation {
+export function rectifyOrientation(polylines: Polyline[], vp: VpDims): RectifiedOrientation {
   // Pick the longest dark polylines as signal-trace candidates. We don't
   // need them to actually be ECG traces — any vector path long enough to
   // measure orientation works.

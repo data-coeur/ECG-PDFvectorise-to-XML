@@ -5,7 +5,7 @@
 // to the previous sample's position, draws a 1-segment line to the next
 // sample, then lifts. A 12-lead page easily exceeds 5000 subpaths. The
 // default pipeline treats each subpath as its own polyline and then
-// `idTraces` rejects everything because `minPoints > 50` is never reached.
+// `findSignalTraces` rejects everything because `minPoints > 50` is never reached.
 //
 // Fix: before anything else touches the polylines, walk them in drawing
 // order and re-weld consecutive 2-point segments whose endpoints match
@@ -13,7 +13,7 @@
 // one long polyline per continuous pen-down stroke.
 //
 // Second wrinkle: Vectracor draws signal traces in red (not black), so even
-// after welding, `idTraces`' black-colour filter rejects them. Rather than
+// after welding, `findSignalTraces`' black-colour filter rejects them. Rather than
 // relaxing the global colour threshold (which would risk picking up grid
 // lines on other manufacturers), we identify the dominant "long polyline"
 // colour after welding and remap it to pure black — all ECG signals on a

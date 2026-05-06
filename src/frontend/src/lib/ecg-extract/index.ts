@@ -1,21 +1,32 @@
 // ECG signal extraction pipeline — entry point.
 //
-// Pipeline: PDF → parse paths → detect manufacturer (from PDF content) → load profile
-//           → identify traces → detect grid → compute scale → detect layout
-//           → assign leads → find calibration baselines → convert to mV
+// Pipeline (each step lives in its own file, in the order called below):
+//   01  parse-paths              PDF operators → polylines (color, width, points)
+//   02  detect-manufacturer      content signatures → profile name
+//   03  apply profile pre-process  manufacturer-specific polyline rewriting (e.g. Vectracor weld)
+//   04  rectify-orientation      detect 90/180/270° rotation, rotate polylines + labels
+//   05  extract-text-labels      pdfjs text items → lead labels (I, II, V1...)
+//   06  find-signal-traces       filter polylines down to 12 lead traces
+//   07  extract-grid             find horizontal & vertical grid lines
+//   08  compute-scale            grid spacing → pts/mm, pts/sec, pts/mV
+//   09  detect-layout            stacked / sequential / grid_4x3
+//   10  pair-traces-with-labels  positional matching trace ↔ lead name
+//   11  find-baselines           calibration pulses or grid-snapped mode
+//   12  convert-to-mv            polyline points → samples in millivolts
+//   13  build rhythm strip       repeat / clone lead II if needed
 
 import { pdfjsLib } from '../pdf-config';
 import type { PDFPageProxy, PDFDocumentProxy } from 'pdfjs-dist';
 import type { Label, ECGData, ECGChannel, Polyline } from '../types';
-import { LEAD_NAMES, LEAD_ALIASES } from './constants';
+import { LEAD_NAMES, LEAD_ALIASES } from './lead-names';
 import { detectManufacturer, resolveProfile } from './profiles';
 import { parse } from './parse-paths';
-import { normalizeOrientation, rotatePoint } from './normalize-orientation';
-import { idTraces } from './identify-traces';
+import { rectifyOrientation, rotatePoint } from './rectify-orientation';
+import { findSignalTraces } from './find-signal-traces';
 import { detectLayout } from './detect-layout';
-import { assign } from './assign-leads';
+import { pairTracesWithLabels } from './pair-traces-with-labels';
 import { extractGridLines, computeScaleFromGrid, extractCalibrationBaselines, findBaselineForTrace } from './grid-and-scale';
-import { toPhysical } from './signal-convert';
+import { convertToMv } from './convert-to-mv';
 
 export async function extractFromPdf(file: File): Promise<ECGData | null> {
   const data = await file.arrayBuffer();
@@ -29,33 +40,23 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   const ops = await pg.getOperatorList();
   const tc = await pg.getTextContent();
 
-  // Step 1: Parse all vector paths from the PDF
+  // ── 01  parse-paths ───────────────────────────────────────────────────
   const rawPolylines = parse(ops, vp);
+  console.log(`[ECG] Raw polylines: ${rawPolylines.length}  viewport: ${vp.width.toFixed(0)}×${vp.height.toFixed(0)}  ops: ${ops.fnArray.length}`);
 
-  // ── Diagnostic (temporary) ──
-  const colorBuckets: Record<string, number> = {};
-  for (const p of rawPolylines) {
-    const key = `${p.col[0].toFixed(2)},${p.col[1].toFixed(2)},${p.col[2].toFixed(2)}`;
-    colorBuckets[key] = (colorBuckets[key] || 0) + 1;
-  }
-  console.log(`[ECG] Raw polylines: ${rawPolylines.length}, colors:`, colorBuckets);
-  console.log(`[ECG] Viewport: ${vp.width.toFixed(0)}x${vp.height.toFixed(0)}, ops: ${ops.fnArray.length}`);
-  // ── End diagnostic ──
-
-  // Step 2: Detect manufacturer from raw polylines. None of the detection
-  // rules depend on content rotation, and we need the profile to run
-  // manufacturer-specific polyline post-processing BEFORE orientation is
-  // normalized — otherwise per-segment PDFs (Vectracor) have no long traces
-  // to score rotation on, and landscape/portrait misdetection results in a
-  // flat signal.
+  // ── 02  detect-manufacturer ──────────────────────────────────────────
+  // Detection rules don't depend on content rotation, and we need the
+  // profile to run manufacturer-specific polyline post-processing BEFORE
+  // orientation is rectified — otherwise per-segment PDFs (Vectracor) have
+  // no long traces to score rotation on.
   const meta = await pdf.getMetadata();
-  const mfrName = detectManufacturer(meta.info as Record<string, string>, vp, rawPolylines);
-  const profile = resolveProfile(mfrName);
-  console.log(`[ECG] Manufacturer: ${mfrName}`);
+  const manufacturer = detectManufacturer(meta.info as Record<string, string>, vp, rawPolylines);
+  const profile = resolveProfile(manufacturer);
+  console.log(`[ECG] Manufacturer: ${manufacturer}`);
 
-  // Step 2b: Manufacturer-specific polyline post-processing. Most profiles
-  // leave this undefined; Vectracor-style per-segment PDFs use it to fuse
-  // thousands of 2-point subpaths back into continuous traces.
+  // ── 03  apply profile pre-process ─────────────────────────────────────
+  // Most profiles leave this undefined; Vectracor-style per-segment PDFs
+  // use it to fuse thousands of 2-point subpaths into continuous traces.
   const processed = profile.postProcessPolylines
     ? profile.postProcessPolylines(rawPolylines)
     : rawPolylines;
@@ -63,12 +64,11 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
     console.log(`[ECG] postProcessPolylines: ${rawPolylines.length} → ${processed.length}`);
   }
 
-  // Step 2c: Rectify content-stream rotation (90/180/270°) so downstream
-  // stages — which all assume time runs along x — can stay unchanged. Runs
-  // on the post-processed polylines so per-segment PDFs expose real traces
-  // to the orientation scorer. Profiles can override the content-based
-  // detection with `forceRotation` when their orientation is always the
-  // same but individual pages don't have enough traces to score reliably.
+  // ── 04  rectify-orientation ──────────────────────────────────────────
+  // After this step, every downstream stage can assume time runs along x.
+  // Profiles can override the content-based detection with `forceRotation`
+  // when their orientation is fixed but individual pages don't have enough
+  // traces for the scorer to be reliable.
   let polylines: Polyline[];
   let workVp: { width: number; height: number };
   let rotation: 0 | 90 | 180 | 270;
@@ -83,18 +83,19 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
       : { width: vp.width, height: vp.height };
     console.log(`[ECG] Rotation: ${rotation}° (forced by profile), polylines: ${polylines.length}`);
   } else {
-    const r = normalizeOrientation(processed, vp);
+    const r = rectifyOrientation(processed, vp);
     polylines = r.polylines;
     workVp = r.vp;
     rotation = r.rotation;
-    console.log(`[ECG] Rotation: ${rotation}°, polylines after normalize: ${polylines.length}`);
+    console.log(`[ECG] Rotation: ${rotation}°, polylines after rectify: ${polylines.length}`);
   }
 
-  // Step 3: Extract text labels (lead names: I, II, V1...)
-  // Merge global aliases with profile-specific extra aliases
+  // ── 05  extract-text-labels ───────────────────────────────────────────
+  // Filter pdfjs text items down to lead labels (I, II, V1…), normalising
+  // through aliases (D1 → I, etc.). Labels are rotated alongside polylines
+  // so they stay co-located with their trace.
   const effectiveAliases = { ...LEAD_ALIASES, ...profile.leads.extraAliases };
   const allTokens = [...LEAD_NAMES, ...Object.keys(effectiveAliases)];
-
   const labels: Label[] = [];
   const seenLabels = new Set<string>();
   for (const it of tc.items) {
@@ -105,46 +106,44 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
       if (seenLabels.has(normalized)) continue;
       seenLabels.add(normalized);
       const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
-      // Apply the same rotation we applied to the polylines, so labels stay
-      // co-located with the traces they belong to.
       const rp = rotatePoint({ x, y }, rotation, vp.width, vp.height);
       labels.push({ text: normalized, x: rp.x, y: rp.y });
     }
   }
 
-  // Step 3: Identify ECG signal traces
-  const traces = idTraces(polylines, profile);
-  console.log(`[ECG] idTraces: ${traces.length} traces found (threshold: black<${profile.trace.blackThreshold}, minPts>${profile.trace.minPoints})`);
+  // ── 06  find-signal-traces ────────────────────────────────────────────
+  const traces = findSignalTraces(polylines, profile);
+  console.log(`[ECG] findSignalTraces: ${traces.length} traces found (black<${profile.trace.blackThreshold}, minPts>${profile.trace.minPoints})`);
   if (traces.length) {
     const top5 = traces.slice(0, 5).map(t => `${t.pts.length}pts col=[${t.col.map(c => c.toFixed(2)).join(',')}]`);
     console.log(`[ECG] Top traces: ${top5.join(' | ')}`);
   }
   if (!traces.length) return null;
 
-  // Step 4: Detect grid lines from the PDF
+  // ── 07  extract-grid ──────────────────────────────────────────────────
   const grid = extractGridLines(polylines, workVp, profile);
   if (!grid) throw new Error('GRID_NOT_DETECTED');
 
-  // Step 5: Compute physical scale from grid spacing
+  // ── 08  compute-scale ─────────────────────────────────────────────────
   const scale = computeScaleFromGrid(grid);
 
-  // Step 6: Detect page layout
+  // ── 09  detect-layout ─────────────────────────────────────────────────
   const layout = detectLayout(traces, workVp, profile);
 
-  // Step 7: Assign each trace to a lead name
-  const assigned = assign(traces, labels, layout, profile);
+  // ── 10  pair-traces-with-labels ───────────────────────────────────────
+  const labelledTraces = pairTracesWithLabels(traces, labels, layout, profile);
 
-  // Step 8: Find exact 0mV baselines from calibration pulses (best-effort).
-  // Some PDF formats don't have detectable calibration pulses — in that case
-  // findBaselineForTrace falls back to a histogram-mode estimate snapped onto
-  // the nearest major (5 mm) grid line.
+  // ── 11  find-baselines ────────────────────────────────────────────────
+  // Calibration pulses give exact 0 mV baselines when present; otherwise
+  // findBaselineForTrace falls back to a histogram-mode estimate snapped
+  // onto the nearest major (5 mm) grid line.
   const calBaselines = extractCalibrationBaselines(polylines, scale, layout, profile);
 
-  // Step 9: Convert each trace from PDF coordinates to millivolts
-  // Helper to convert one assigned trace into an ECGChannel object
-  const toChannel = (c: typeof assigned[number]): ECGChannel => {
+  // ── 12  convert-to-mv ─────────────────────────────────────────────────
+  // Convert each labelled trace from PDF coordinates to millivolt samples.
+  const toChannel = (c: typeof labelledTraces[number]): ECGChannel => {
     const baseline = findBaselineForTrace(c.pts, calBaselines, layout, grid);
-    const signal = toPhysical(c.pts, scale, layout, baseline);
+    const signal = convertToMv(c.pts, scale, layout, baseline);
     let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
     for (const p of c.pts) {
       if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x;
@@ -158,15 +157,14 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
     };
   };
 
-  // Build the standard 12 leads (everything except *_rhythm channels)
-  const standardChannels: ECGChannel[] = assigned
+  const standardChannels: ECGChannel[] = labelledTraces
     .filter(c => !/_rhythm$/i.test(c.name))
     .map(toChannel);
 
-  // Build the rhythm strip channel (target ~10s duration)
+  // ── 13  build rhythm strip ────────────────────────────────────────────
   const TARGET_RHYTHM_DURATION_S = 10;
-  const hasNativeRhythm = assigned.some(c => /_rhythm$/i.test(c.name));
-  const rhythmChannel = buildRhythmStripChannel(assigned, standardChannels, toChannel, TARGET_RHYTHM_DURATION_S);
+  const hasNativeRhythm = labelledTraces.some(c => /_rhythm$/i.test(c.name));
+  const rhythmChannel = buildRhythmStripChannel(labelledTraces, standardChannels, toChannel, TARGET_RHYTHM_DURATION_S);
 
   return {
     manufacturer: profile.name,
@@ -186,13 +184,13 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
 // - Otherwise, repeat lead II enough times to reach `targetDuration` seconds
 //   (e.g. ×2 for MUSE 5s leads → 10s rhythm strip).
 function buildRhythmStripChannel(
-  assigned: ReturnType<typeof assign>,
+  labelledTraces: ReturnType<typeof pairTracesWithLabels>,
   standardChannels: ECGChannel[],
-  toChannel: (c: ReturnType<typeof assign>[number]) => ECGChannel,
+  toChannel: (c: ReturnType<typeof pairTracesWithLabels>[number]) => ECGChannel,
   targetDuration: number,
 ): ECGChannel | null {
   // Case 1: PDF provides a separate rhythm strip — use the original 10s data
-  const originalRhythm = assigned.find(c => /_rhythm$/i.test(c.name));
+  const originalRhythm = labelledTraces.find(c => /_rhythm$/i.test(c.name));
   if (originalRhythm) {
     const ch = toChannel(originalRhythm);
     return { ...ch, name: 'II_rhythm' };

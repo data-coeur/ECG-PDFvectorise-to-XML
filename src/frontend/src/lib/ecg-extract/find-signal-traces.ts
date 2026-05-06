@@ -1,9 +1,9 @@
 import type { Polyline } from '../types';
 import type { ManufacturerProfile } from './profiles';
 
-// Find ECG signal traces among all polylines:
-// black color, enough points, significant size relative to the largest trace.
-export function idTraces(P: Polyline[], profile: ManufacturerProfile): Polyline[] {
+// Find ECG signal traces among all polylines: black color, enough points,
+// significant size relative to the largest trace.
+export function findSignalTraces(P: Polyline[], profile: ManufacturerProfile): Polyline[] {
   const { blackThreshold, minPoints, minSizeRatio, maxTraces } = profile.trace;
   let candidates = P.filter(p => p.col[0] < blackThreshold && p.col[1] < blackThreshold && p.col[2] < blackThreshold && p.pts.length > minPoints);
   if (!candidates.length) return [];

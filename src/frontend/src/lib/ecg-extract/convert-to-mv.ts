@@ -12,7 +12,7 @@ import type { Point, Layout, ScaleInfo } from '../types';
 const UNIFORMITY_THRESHOLD = 0.10;  // accept ≤10% variation in inter-point gaps
 const RESAMPLE_RATE_HZ = 500;
 
-export function toPhysical(pts: Point[], sc: ScaleInfo, lay: Layout, gridBaseline: number): { samples: number[]; dur: number } {
+export function convertToMv(pts: Point[], sc: ScaleInfo, lay: Layout, gridBaseline: number): { samples: number[]; dur: number } {
   if (pts.length < 2) return { samples: [], dur: 0 };
   const tA = lay.tA, vK = tA === 'x' ? 'y' : 'x';
   const ppsAxis = tA === 'x' ? sc.pmmX * 25 : sc.pmmY * 25;

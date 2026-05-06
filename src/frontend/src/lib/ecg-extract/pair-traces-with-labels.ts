@@ -1,11 +1,13 @@
 import type { Point, Polyline, Label, Layout } from '../types';
-import { LEAD_NAMES } from './constants';
+import { LEAD_NAMES } from './lead-names';
 import type { ManufacturerProfile } from './profiles';
 
-export type AssignResult = { name: string; pts: Point[]; baselineY?: number };
+export type LabelledTrace = { name: string; pts: Point[]; baselineY?: number };
 
-// Match each trace to a lead name using text labels and position.
-export function assign(tr: Polyline[], lb: Label[], lay: Layout, profile: ManufacturerProfile): AssignResult[] {
+// Match each trace to a lead name using text labels and position. The signal
+// traces and labels are matched positionally — i.e. by their geometric
+// neighbourhood — not by reading the label text against the trace itself.
+export function pairTracesWithLabels(tr: Polyline[], lb: Label[], lay: Layout, profile: ManufacturerProfile): LabelledTrace[] {
   const vK = lay.tA === 'x' ? 'y' : 'x';
 
   if (lay.type === 'stacked_12x1') {
@@ -27,7 +29,7 @@ export function assign(tr: Polyline[], lb: Label[], lay: Layout, profile: Manufa
   // sequential_6x2: split into upper/lower halves, sort columns left-to-right
   // and rows top-to-bottom so positional pairing with labels is stable. A
   // single sort by cx is NOT enough: JS stable-sort would preserve whatever
-  // order idTraces returned (point count descending), which can scramble rows
+  // order findSignalTraces returned (point count descending), which can scramble rows
   // within a column when the lead with the most inflection points isn't the
   // topmost one.
   const cyVals = tr.map(t => t.bb!.cy);
@@ -46,7 +48,7 @@ export function assign(tr: Polyline[], lb: Label[], lay: Layout, profile: Manufa
     l2 = LEAD_NAMES.slice(6).map(n => ({ text: n, x: 0, y: 0 }));
   }
 
-  const ch: AssignResult[] = [];
+  const ch: LabelledTrace[] = [];
   for (let i = 0; i < g1.length; i++)
     ch.push({ name: i < l1.length ? l1[i].text : `L${i + 1}`, pts: g1[i].pts, baselineY: l1[i]?.[vK as keyof Label] as number | undefined });
   for (let i = 0; i < g2.length; i++)
@@ -63,7 +65,7 @@ export function assign(tr: Polyline[], lb: Label[], lay: Layout, profile: Manufa
 // Uses positional assignment via profile.leads.gridOrder. Label-based matching was tried
 // before but was unreliable (greedy nearest-neighbor produced duplicate / wrong assignments
 // when label positions in the PDF didn't perfectly match their traces).
-function assignGrid4x3(tr: Polyline[], _lb: Label[], _vK: string, profile: ManufacturerProfile): AssignResult[] {
+function assignGrid4x3(tr: Polyline[], _lb: Label[], _vK: string, profile: ManufacturerProfile): LabelledTrace[] {
   const widths = tr.map(t => t.bb!.dx);
   const medWidth = [...widths].sort((a, b) => a - b)[Math.floor(widths.length / 2)];
   const rhythmThreshold = medWidth * profile.leads.rhythmStripWidthRatio;
@@ -86,7 +88,7 @@ function assignGrid4x3(tr: Polyline[], _lb: Label[], _vK: string, profile: Manuf
   for (const col of colGroups) col.sort((a, b) => a.bb!.cy - b.bb!.cy);
 
   const gridOrder = profile.leads.gridOrder;
-  const ch: AssignResult[] = [];
+  const ch: LabelledTrace[] = [];
 
   // Positional assignment: column index → group of leads, row index → lead within group
   for (let ci = 0; ci < colGroups.length && ci < gridOrder.length; ci++) {

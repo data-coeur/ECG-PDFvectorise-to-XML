@@ -54,7 +54,7 @@ export interface ManufacturerProfile {
     rhythmStripWidthRatio: number;          // rhythm strip detection (default: 1.8)
   };
 
-  // Optional post-processing hook applied between parse and idTraces. Used by
+  // Optional post-processing hook applied between parse and findSignalTraces. Used by
   // manufacturers whose PDFs need non-trivial polyline rewriting (e.g. Vectracor-
   // style per-segment subpaths that must be fused into continuous traces).
   // Keep exotic manufacturer code in profiles/manufacturers/*.ts — this hook
@@ -62,7 +62,7 @@ export interface ManufacturerProfile {
   postProcessPolylines?: (P: Polyline[]) => Polyline[];
 
   // When set, bypass the content-based rotation detection in
-  // normalizeOrientation and apply this fixed rotation instead. Useful for
+  // rectifyOrientation and apply this fixed rotation instead. Useful for
   // manufacturers whose page orientation is always the same but whose pages
   // may contain only 1-2 traces (not enough for the generic detector to
   // score reliably). Vectracor always draws portrait with time flowing

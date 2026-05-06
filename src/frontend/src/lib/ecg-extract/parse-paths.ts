@@ -1,5 +1,5 @@
 import type { Point, Polyline } from '../types';
-import { OPS } from './constants';
+import { OPS } from '../pdf-config';
 
 // Normalize an RGB color to [0, 1] range. pdfjs sometimes returns colors in
 // [0, 255] range (e.g. for matplotlib-generated PDFs) — detect this by checking
