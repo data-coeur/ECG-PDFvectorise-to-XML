@@ -1,4 +1,4 @@
-import type { DeepPartial, ManufacturerProfile } from '../index';
+import type { DeepPartial, ManufacturerProfile } from '../types';
 
 export const GE_MUSE: DeepPartial<ManufacturerProfile> = {
   layout: {

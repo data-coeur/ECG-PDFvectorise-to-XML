@@ -1,4 +1,4 @@
-import type { DeepPartial, ManufacturerProfile } from '../index';
+import type { DeepPartial, ManufacturerProfile } from '../types';
 
 // Schiller variant that uses CS/SC color operators (instead of RG) and a
 // pink grid (RGB ~0.90, 0.70, 0.70) instead of the pure red grid of the

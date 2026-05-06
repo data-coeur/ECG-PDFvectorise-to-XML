@@ -20,7 +20,7 @@
 // given page share one stroke setup, so this is both safe and generic.
 
 import type { Polyline } from '../../../types';
-import type { DeepPartial, ManufacturerProfile } from '../index';
+import type { DeepPartial, ManufacturerProfile } from '../types';
 
 /** Max gap (in PDF points) between one segment's end and the next segment's
  *  start for them to be considered part of the same continuous stroke. */

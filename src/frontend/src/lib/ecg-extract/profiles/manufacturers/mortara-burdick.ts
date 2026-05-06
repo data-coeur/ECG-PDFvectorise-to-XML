@@ -1,4 +1,4 @@
-import type { DeepPartial, ManufacturerProfile } from '../index';
+import type { DeepPartial, ManufacturerProfile } from '../types';
 
 export const MORTARA_BURDICK: DeepPartial<ManufacturerProfile> = {
   layout: {
