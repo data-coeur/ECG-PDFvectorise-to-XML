@@ -1,14 +1,29 @@
+// 09  detect-layout — figure out the page layout (which axis carries
+// time, whether voltage is inverted, how the 12 leads are arranged).
+//
+// Detection is two-step:
+//   1. Find the time axis by counting how many traces are monotonic in x
+//      vs y; whichever axis has at least `monotonicityThreshold` of
+//      traces monotonic wins.
+//   2. Among the supported layouts (stacked_12x1, sequential_6x2,
+//      grid_4x3), pick the one whose row/column count and aspect ratio
+//      best match the trace bounding boxes. Profiles can short-circuit
+//      this with `profile.layout.expectedLayout`.
+
 import type { Polyline, Layout } from '../types';
 import type { ManufacturerProfile } from './profiles';
 
-// Determine the ECG page layout from trace positions and page dimensions.
-export function detectLayout(tr: Polyline[], vp: { width: number; height: number }, profile: ManufacturerProfile): Layout {
+export function detectLayout(
+  traces: Polyline[],
+  viewport: { width: number; height: number },
+  profile: ManufacturerProfile,
+): Layout {
   const { monotonicityThreshold, monotonicityTolerance, colClusterFraction, rowClusterFraction, wideTraceFraction, expectedLayout } = profile.layout;
 
-  // Detect time axis and voltage inversion from trace monotonicity
+  // Step 1: time axis + vertical inversion ────────────────────────────────
   let xMonoCount = 0, yMonoCount = 0;
-  for (const t of tr) {
-    const pts = t.pts;
+  for (const trace of traces) {
+    const pts = trace.pts;
     let xMono = true, yMonoInc = true, yMonoDec = true;
     for (let i = 1; i < pts.length; i++) {
       if (pts[i].x < pts[i - 1].x - monotonicityTolerance) xMono = false;
@@ -19,54 +34,54 @@ export function detectLayout(tr: Polyline[], vp: { width: number; height: number
     if (yMonoInc || yMonoDec) yMonoCount++;
   }
 
-  let tA: 'x' | 'y', vI: boolean;
-  if (xMonoCount >= tr.length * monotonicityThreshold) {
-    tA = 'x'; vI = true;
-  } else if (yMonoCount >= tr.length * monotonicityThreshold) {
-    tA = 'y'; vI = true;
+  let timeAxis: 'x' | 'y';
+  let verticalInverted: boolean;
+  if (xMonoCount >= traces.length * monotonicityThreshold) {
+    timeAxis = 'x'; verticalInverted = true;
+  } else if (yMonoCount >= traces.length * monotonicityThreshold) {
+    timeAxis = 'y'; verticalInverted = true;
   } else {
-    const adx = tr.reduce((s, t) => s + t.bb!.dx, 0) / tr.length;
-    const ady = tr.reduce((s, t) => s + t.bb!.dy, 0) / tr.length;
-    tA = adx >= ady ? 'x' : 'y';
-    vI = tA === 'x';
+    const avgDx = traces.reduce((sum, t) => sum + t.bb!.dx, 0) / traces.length;
+    const avgDy = traces.reduce((sum, t) => sum + t.bb!.dy, 0) / traces.length;
+    timeAxis = avgDx >= avgDy ? 'x' : 'y';
+    verticalInverted = timeAxis === 'x';
   }
 
-  // If the profile specifies an expected layout, use it (skip auto-detection)
-  if (expectedLayout) return { type: expectedLayout, tA, vI };
+  // Step 2: arrangement ───────────────────────────────────────────────────
+  if (expectedLayout) return { type: expectedLayout, timeAxis, verticalInverted };
 
-  const timeExtent = tA === 'x' ? vp.width : vp.height;
-  const allWide = tr.every(t => (tA === 'x' ? t.bb!.dx : t.bb!.dy) > timeExtent * wideTraceFraction);
+  const timeExtent = timeAxis === 'x' ? viewport.width : viewport.height;
+  const allWide = traces.every(t => (timeAxis === 'x' ? t.bb!.dx : t.bb!.dy) > timeExtent * wideTraceFraction);
 
-  if (tA === 'x' && tr.length >= 12) {
-    const cxVals = tr.map(t => t.bb!.cx).sort((a, b) => a - b);
-    const cols = clusterValues(cxVals, vp.width * colClusterFraction);
-    const cyVals = tr.map(t => t.bb!.cy).sort((a, b) => a - b);
-    const rows = clusterValues(cyVals, vp.height * rowClusterFraction);
+  if (timeAxis === 'x' && traces.length >= 12) {
+    const cxVals = traces.map(t => t.bb!.cx).sort((a, b) => a - b);
+    const cyVals = traces.map(t => t.bb!.cy).sort((a, b) => a - b);
+    const cols = clusterValues(cxVals, viewport.width * colClusterFraction);
+    const rows = clusterValues(cyVals, viewport.height * rowClusterFraction);
     if (cols.length >= 4 && rows.length >= 3) {
-      return { type: 'grid_4x3', tA, vI };
+      return { type: 'grid_4x3', timeAxis, verticalInverted };
     }
     // 6x2 layout: 2 columns × at least 5 rows (12 leads = 6 left + 6 right)
     if (cols.length === 2 && rows.length >= 5) {
-      return { type: 'sequential_6x2', tA, vI };
+      return { type: 'sequential_6x2', timeAxis, verticalInverted };
     }
   }
 
-  const perpVals = tr.map(t => t.bb!.cy);
-  const perpMin = Math.min(...perpVals), perpMax = Math.max(...perpVals);
-  const perpMid = (perpMin + perpMax) / 2;
-  const grp1 = tr.filter(t => t.bb!.cy < perpMid);
-  const grp2 = tr.filter(t => t.bb!.cy >= perpMid);
+  if (allWide) return { type: 'stacked_12x1', timeAxis, verticalInverted };
 
-  if (allWide) return { type: 'stacked_12x1', tA, vI };
-
-  if (grp1.length >= 4 && grp2.length >= 4 && grp1.length <= 8 && grp2.length <= 8) {
-    return { type: 'sequential_6x2', tA, vI };
+  // Fallback: split into upper/lower halves and check the population of each.
+  const cyVals = traces.map(t => t.bb!.cy);
+  const cyMid = (Math.min(...cyVals) + Math.max(...cyVals)) / 2;
+  const upper = traces.filter(t => t.bb!.cy < cyMid);
+  const lower = traces.filter(t => t.bb!.cy >= cyMid);
+  if (upper.length >= 4 && lower.length >= 4 && upper.length <= 8 && lower.length <= 8) {
+    return { type: 'sequential_6x2', timeAxis, verticalInverted };
   }
-  return { type: 'stacked_12x1', tA, vI };
+  return { type: 'stacked_12x1', timeAxis, verticalInverted };
 }
 
-// Group sorted values into clusters separated by gaps > threshold
-export function clusterValues(sorted: number[], threshold: number): number[][] {
+// Group sorted values into clusters separated by gaps greater than `threshold`.
+function clusterValues(sorted: number[], threshold: number): number[][] {
   if (!sorted.length) return [];
   const clusters: number[][] = [[sorted[0]]];
   for (let i = 1; i < sorted.length; i++) {

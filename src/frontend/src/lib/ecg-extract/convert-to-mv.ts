@@ -1,79 +1,92 @@
+// 12  convert-to-mv — turn a polyline expressed in PDF coordinates into a
+// millivolt sample array, given the physical scale and the trace's 0 mV
+// baseline.
+//
+// Two paths depending on temporal spacing of the source points:
+//   - UNIFORM     (e.g. MUSE / matplotlib renderings) — use the original
+//                 samples directly. No interpolation, fine baseline detail
+//                 preserved exactly as drawn.
+//   - NON-UNIFORM (e.g. DICOM italian, where flat regions have fewer
+//                 points) — resample to a uniform 500 Hz grid via linear
+//                 interpolation between consecutive polyline points.
+//
+// "Uniform" means every inter-point time gap is within ±10 % of the
+// median gap. The threshold is intentionally tight so we only skip
+// resampling when the source really is regularly sampled.
+
 import type { Point, Layout, ScaleInfo } from '../types';
 
-// Convert PDF pixel coordinates to physical units (millivolts, seconds).
-//
-// Strategy:
-//   1. If the PDF source has uniform temporal spacing (e.g. MUSE, this PDF),
-//      use the original samples directly — no interpolation, preserves all
-//      fine baseline details exactly as drawn in the PDF.
-//   2. If the PDF source has non-uniform spacing (e.g. DICOM italian, where
-//      flat regions have fewer points), resample to a uniform 500 Hz grid
-//      via linear interpolation between PDF polyline points.
-const UNIFORMITY_THRESHOLD = 0.10;  // accept ≤10% variation in inter-point gaps
+const UNIFORMITY_THRESHOLD = 0.10;
 const RESAMPLE_RATE_HZ = 500;
 
-export function convertToMv(pts: Point[], sc: ScaleInfo, lay: Layout, gridBaseline: number): { samples: number[]; dur: number } {
+export function convertToMv(
+  pts: Point[],
+  scale: ScaleInfo,
+  layout: Layout,
+  gridBaseline: number,
+): { samples: number[]; dur: number } {
   if (pts.length < 2) return { samples: [], dur: 0 };
-  const tA = lay.tA, vK = tA === 'x' ? 'y' : 'x';
-  const ppsAxis = tA === 'x' ? sc.pmmX * 25 : sc.pmmY * 25;
-  const ppvAxis = vK === 'y' ? sc.pmmY * 10 : sc.pmmX * 10;
 
-  // Sort by time axis
-  const s = [...pts].sort((a, b) => a[tA] - b[tA]);
+  const timeAxis = layout.timeAxis;
+  const valueAxis = timeAxis === 'x' ? 'y' : 'x';
+  const ptsPerSecond = timeAxis === 'x' ? scale.pmmX * 25 : scale.pmmY * 25;
+  const ptsPerMv = valueAxis === 'y' ? scale.pmmY * 10 : scale.pmmX * 10;
+
+  // Sort points along the time axis. If the PDF drew the trace right-to-left
+  // (so `pts[0]` is to the right of `pts[last]`), we end up with the same
+  // sorted array — but we want the time origin on the visible left, so
+  // reverse it back.
+  const sorted = [...pts].sort((a, b) => a[timeAxis] - b[timeAxis]);
   if (pts.length > 10) {
-    const firstT = pts[0][tA], lastT = pts[pts.length - 1][tA];
-    if (firstT > lastT + 1) s.reverse();
+    const firstTime = pts[0][timeAxis];
+    const lastTime = pts[pts.length - 1][timeAxis];
+    if (firstTime > lastTime + 1) sorted.reverse();
   }
 
-  const tStart = s[0][tA];
-  const tEnd = s[s.length - 1][tA];
-  const dur = Math.abs(tEnd - tStart) / ppsAxis;
-  const ref = gridBaseline;
+  const tStart = sorted[0][timeAxis];
+  const tEnd = sorted[sorted.length - 1][timeAxis];
+  const duration = Math.abs(tEnd - tStart) / ptsPerSecond;
 
+  // Convert one PDF coordinate value into mV. `verticalInverted` flips the
+  // sign for PDF coordinate systems where Y grows downward.
+  const verticalInverted = layout.verticalInverted;
   const toMv = (v: number) => {
-    let mv = (v - ref) / ppvAxis;
-    if (lay.vI) mv = -mv;
+    let mv = (v - gridBaseline) / ptsPerMv;
+    if (verticalInverted) mv = -mv;
     return Math.round(mv * 10000) / 10000;
   };
 
-  // Check if the PDF source has uniform temporal spacing.
-  // We sample a few inter-point gaps and check that they're close to the median.
+  // Decide uniform vs non-uniform by checking inter-point gap variance.
   const gaps: number[] = [];
-  for (let i = 1; i < s.length; i++) gaps.push(s[i][tA] - s[i - 1][tA]);
+  for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i][timeAxis] - sorted[i - 1][timeAxis]);
   const sortedGaps = [...gaps].sort((a, b) => a - b);
   const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)];
-  let isUniform = true;
-  if (medianGap > 0) {
+  let isUniform = medianGap > 0;
+  if (isUniform) {
     for (const g of gaps) {
-      if (Math.abs(g - medianGap) / medianGap > UNIFORMITY_THRESHOLD) {
-        isUniform = false;
-        break;
-      }
+      if (Math.abs(g - medianGap) / medianGap > UNIFORMITY_THRESHOLD) { isUniform = false; break; }
     }
-  } else {
-    isUniform = false;
   }
 
   if (isUniform) {
-    // Use original PDF samples directly — no interpolation, preserves all details
-    return { samples: s.map(p => toMv(p[vK])), dur };
+    return { samples: sorted.map(p => toMv(p[valueAxis])), dur: duration };
   }
 
-  // Non-uniform PDF → resample to uniform 500 Hz grid
-  const n_target = Math.max(2, Math.round(dur * RESAMPLE_RATE_HZ));
+  // Non-uniform — linearly interpolate onto a uniform 500 Hz grid.
+  const targetCount = Math.max(2, Math.round(duration * RESAMPLE_RATE_HZ));
   const tSpan = tEnd - tStart;
-  const dt = tSpan / (n_target - 1);
-  const samples: number[] = new Array(n_target);
+  const dt = tSpan / (targetCount - 1);
+  const samples = new Array<number>(targetCount);
 
   let lo = 0;
-  for (let i = 0; i < n_target; i++) {
+  for (let i = 0; i < targetCount; i++) {
     const t = tStart + i * dt;
-    while (lo < s.length - 2 && s[lo + 1][tA] < t) lo++;
-    const t0 = s[lo][tA], t1 = s[lo + 1][tA];
-    const v0 = s[lo][vK], v1 = s[lo + 1][vK];
+    while (lo < sorted.length - 2 && sorted[lo + 1][timeAxis] < t) lo++;
+    const t0 = sorted[lo][timeAxis], t1 = sorted[lo + 1][timeAxis];
+    const v0 = sorted[lo][valueAxis], v1 = sorted[lo + 1][valueAxis];
     const frac = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
     samples[i] = toMv(v0 + (v1 - v0) * frac);
   }
 
-  return { samples, dur };
+  return { samples, dur: duration };
 }

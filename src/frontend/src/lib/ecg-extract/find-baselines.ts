@@ -22,29 +22,29 @@ import { isBlackPolyline } from './polyline-utils';
  * Calibration pulses are small black polylines whose height equals 1 mV.
  */
 export function extractCalibrationBaselines(
-  P: Polyline[],
-  sc: ScaleInfo,
-  lay: Layout,
+  polylines: Polyline[],
+  scale: ScaleInfo,
+  layout: Layout,
   profile: ManufacturerProfile,
 ): number[] {
   const { blackThreshold } = profile.trace;
   const { minPoints, maxPoints, heightTolerance } = profile.calibration;
-  const valueAxis = lay.tA === 'x' ? 'y' : 'x';
-  const ppv = valueAxis === 'y' ? sc.pmmY * 10 : sc.pmmX * 10;
-  const tolerance = ppv * heightTolerance;
+  const valueAxis = layout.timeAxis === 'x' ? 'y' : 'x';
+  const ptsPerMv = valueAxis === 'y' ? scale.pmmY * 10 : scale.pmmX * 10;
+  const tolerance = ptsPerMv * heightTolerance;
 
-  const calPulses = P.filter(p =>
+  const calPulses = polylines.filter(p =>
     isBlackPolyline(p, blackThreshold) &&
     p.pts.length >= minPoints && p.pts.length <= maxPoints
   );
 
   const baselines: number[] = [];
-  for (const p of calPulses) {
-    const vs = p.pts.map(pt => pt[valueAxis]);
+  for (const pulse of calPulses) {
+    const vs = pulse.pts.map(pt => pt[valueAxis]);
     const vMin = Math.min(...vs), vMax = Math.max(...vs);
     const height = vMax - vMin;
-    if (Math.abs(height - ppv) < tolerance) {
-      const baseline = lay.vI ? vMax : vMin;
+    if (Math.abs(height - ptsPerMv) < tolerance) {
+      const baseline = layout.verticalInverted ? vMax : vMin;
       baselines.push(baseline);
     }
   }
@@ -64,10 +64,10 @@ export function extractCalibrationBaselines(
 export function findBaselineForTrace(
   pts: Point[],
   calBaselines: number[],
-  lay: Layout,
+  layout: Layout,
   grid?: GridInfo,
 ): number {
-  const valueAxis = lay.tA === 'x' ? 'y' : 'x';
+  const valueAxis = layout.timeAxis === 'x' ? 'y' : 'x';
   const vs = pts.map(p => p[valueAxis]);
 
   // Path 1: explicit calibration pulses

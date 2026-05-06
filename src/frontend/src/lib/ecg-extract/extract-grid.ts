@@ -13,36 +13,36 @@ import type { ManufacturerProfile } from './profiles';
 import { isBlackPolyline } from './polyline-utils';
 
 export function extractGridLines(
-  P: Polyline[],
-  vp: { width: number; height: number },
+  polylines: Polyline[],
+  viewport: { width: number; height: number },
   profile: ManufacturerProfile,
 ): GridInfo | null {
   const { blackThreshold } = profile.trace;
   const { lineStraightness, minHLineFraction, minVLineFraction, dedupDistance, majorGridThreshold, minLineCount } = profile.grid;
 
-  const minHLen = vp.width * minHLineFraction;
-  const minVLen = vp.height * minVLineFraction;
+  const minHLen = viewport.width * minHLineFraction;
+  const minVLen = viewport.height * minVLineFraction;
 
   // Track each grid line's stroke width so we can distinguish major (5 mm)
   // from minor (1 mm) lines later when the PDF draws them with different widths.
   const hLineEntries: { pos: number; w: number }[] = [];
   const vLineEntries: { pos: number; w: number }[] = [];
 
-  for (const p of P) {
-    if (isBlackPolyline(p, blackThreshold)) continue;  // skip the signal traces
-    if (p.pts.length < 2) continue;
+  for (const poly of polylines) {
+    if (isBlackPolyline(poly, blackThreshold)) continue;  // skip the signal traces
+    if (poly.pts.length < 2) continue;
 
-    const ys = p.pts.map(pt => pt.y);
-    const xs = p.pts.map(pt => pt.x);
+    const ys = poly.pts.map(pt => pt.y);
+    const xs = poly.pts.map(pt => pt.x);
     const yMin = Math.min(...ys), yMax = Math.max(...ys);
     const xMin = Math.min(...xs), xMax = Math.max(...xs);
     const dy = yMax - yMin;
     const dx = xMax - xMin;
 
     if (dy < lineStraightness && dx > minHLen) {
-      hLineEntries.push({ pos: (yMin + yMax) / 2, w: p.w });
+      hLineEntries.push({ pos: (yMin + yMax) / 2, w: poly.w });
     } else if (dx < lineStraightness && dy > minVLen) {
-      vLineEntries.push({ pos: (xMin + xMax) / 2, w: p.w });
+      vLineEntries.push({ pos: (xMin + xMax) / 2, w: poly.w });
     }
   }
 
