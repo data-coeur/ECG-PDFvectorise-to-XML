@@ -29,6 +29,7 @@ import { extractGridLines } from './extract-grid';
 import { computeScaleFromGrid } from './compute-scale';
 import { extractCalibrationBaselines, findBaselineForTrace } from './find-baselines';
 import { convertToMv } from './convert-to-mv';
+import { computeBoundingBox } from './polyline-utils';
 
 export async function extractFromPdf(file: File): Promise<ECGData | null> {
   const data = await file.arrayBuffer();
@@ -146,16 +147,15 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
   const toChannel = (c: typeof labelledTraces[number]): ECGChannel => {
     const baseline = findBaselineForTrace(c.pts, calBaselines, layout, grid);
     const signal = convertToMv(c.pts, scale, layout, baseline);
-    let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
-    for (const p of c.pts) {
-      if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x;
-      if (p.y < by0) by0 = p.y; if (p.y > by1) by1 = p.y;
-    }
+    const bb = computeBoundingBox(c.pts);
     return {
-      name: c.name, samples: signal.samples, duration_s: signal.dur,
+      name: c.name,
+      samples: signal.samples,
+      duration_s: signal.dur,
       sample_rate_hz: signal.samples.length > 1 ? Math.round(signal.samples.length / signal.dur) : 0,
-      voltage_unit: 'mV', time_unit: 's',
-      bbox: { x0: bx0, x1: bx1, y0: by0, y1: by1 },
+      voltage_unit: 'mV',
+      time_unit: 's',
+      bbox: { x0: bb.x0, x1: bb.x1, y0: bb.y0, y1: bb.y1 },
     };
   };
 

@@ -1,15 +1,6 @@
 import type { Point, Polyline } from '../types';
 import { OPS } from '../pdf-config';
-
-// Normalize an RGB color to [0, 1] range. pdfjs sometimes returns colors in
-// [0, 255] range (e.g. for matplotlib-generated PDFs) — detect this by checking
-// if any component is > 1 and divide by 255 in that case.
-function normalizeColor(c: number[]): number[] {
-  if (c[0] > 1 || c[1] > 1 || c[2] > 1) {
-    return [c[0] / 255, c[1] / 255, c[2] / 255];
-  }
-  return c;
-}
+import { normalizeColor } from './polyline-utils';
 
 // 6-element affine matrix: [a, b, c, d, e, f]
 // Transforms (x, y) → (a*x + c*y + e, b*x + d*y + f)

@@ -15,6 +15,7 @@
 
 import type { Point, Polyline, Layout, ScaleInfo, GridInfo } from '../types';
 import type { ManufacturerProfile } from './profiles';
+import { isBlackPolyline } from './polyline-utils';
 
 /**
  * Find every printed calibration pulse and return the Y of its 0 mV edge.
@@ -33,7 +34,7 @@ export function extractCalibrationBaselines(
   const tolerance = ppv * heightTolerance;
 
   const calPulses = P.filter(p =>
-    p.col[0] < blackThreshold && p.col[1] < blackThreshold && p.col[2] < blackThreshold &&
+    isBlackPolyline(p, blackThreshold) &&
     p.pts.length >= minPoints && p.pts.length <= maxPoints
   );
 

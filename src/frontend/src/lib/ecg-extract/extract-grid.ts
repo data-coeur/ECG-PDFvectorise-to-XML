@@ -10,6 +10,7 @@
 
 import type { Polyline, GridInfo } from '../types';
 import type { ManufacturerProfile } from './profiles';
+import { isBlackPolyline } from './polyline-utils';
 
 export function extractGridLines(
   P: Polyline[],
@@ -28,7 +29,7 @@ export function extractGridLines(
   const vLineEntries: { pos: number; w: number }[] = [];
 
   for (const p of P) {
-    if (p.col[0] < blackThreshold && p.col[1] < blackThreshold && p.col[2] < blackThreshold) continue;
+    if (isBlackPolyline(p, blackThreshold)) continue;  // skip the signal traces
     if (p.pts.length < 2) continue;
 
     const ys = p.pts.map(pt => pt.y);
