@@ -10,6 +10,7 @@ import { SCHILLER } from './manufacturers/schiller';
 import { SCHILLER_CS } from './manufacturers/schiller-cs';
 import { MORTARA_BURDICK } from './manufacturers/mortara-burdick';
 import { PTBXL } from './manufacturers/ptbxl';
+import { VECTRACOR } from './manufacturers/vectracor';
 
 // ── Types ──
 
@@ -52,10 +53,30 @@ export interface ManufacturerProfile {
     gridOrder: string[][];                  // column order for grid_4x3
     rhythmStripWidthRatio: number;          // rhythm strip detection (default: 1.8)
   };
+
+  // Optional post-processing hook applied between parse and idTraces. Used by
+  // manufacturers whose PDFs need non-trivial polyline rewriting (e.g. Vectracor-
+  // style per-segment subpaths that must be fused into continuous traces).
+  // Keep exotic manufacturer code in profiles/manufacturers/*.ts — this hook
+  // exists so the main pipeline doesn't have to know about these edge cases.
+  postProcessPolylines?: (P: Polyline[]) => Polyline[];
+
+  // When set, bypass the content-based rotation detection in
+  // normalizeOrientation and apply this fixed rotation instead. Useful for
+  // manufacturers whose page orientation is always the same but whose pages
+  // may contain only 1-2 traces (not enough for the generic detector to
+  // score reliably). Vectracor always draws portrait with time flowing
+  // down the page → forceRotation: 90.
+  forceRotation?: 0 | 90 | 180 | 270;
 }
 
 export type DeepPartial<T> = {
-  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [K in keyof T]?: T[K] extends (...args: any[]) => unknown
+    ? T[K]
+    : T[K] extends object
+      ? DeepPartial<T[K]>
+      : T[K];
 };
 
 // ── Default profile (all current hardcoded values) ──
@@ -106,6 +127,16 @@ export function detectManufacturer(
   const maxDim = Math.max(pageSize.width, pageSize.height);
   if (maxDim > 2000) return 'Mortara/Burdick';
 
+  // 2b. Per-segment subpath format (Vectracor, some Philips/Cardioline
+  // exports): the signal is drawn as thousands of 2-point subpaths. Normal
+  // clinical ECGs have at most a few hundred polylines, so a count above
+  // ~3000 combined with >80% being 2-point is a very specific fingerprint.
+  if (polylines.length > 3000) {
+    let twoPt = 0;
+    for (const p of polylines) if (p.pts.length === 2) twoPt++;
+    if (twoPt / polylines.length > 0.8) return 'Vectracor';
+  }
+
   // 3. Grid color
   // Standard Schiller: pure red grid (R>0.9, G<0.1, B<0.1)
   const hasRedGrid = polylines.some(p =>
@@ -129,6 +160,7 @@ const REGISTRY: Record<string, DeepPartial<ManufacturerProfile>> = {
   'Schiller CS': SCHILLER_CS,
   'Mortara/Burdick': MORTARA_BURDICK,
   'PTB-XL': PTBXL,
+  'Vectracor': VECTRACOR,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
