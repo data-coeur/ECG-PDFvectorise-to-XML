@@ -13,6 +13,9 @@ const translations = {
     // DropZone
     'drop.label': 'Glissez un fichier ECG ici ou cliquez',
     'drop.sub': 'PDF vectorisé (GE MUSE, Schiller, Mortara, Philips...)',
+    'drop.preparing': 'Analyse des fichiers...',
+    'drop.preparingSingle': 'Lecture et découpe du PDF',
+    'drop.preparingProgress': 'Fichier {done} / {total}',
 
     // Batch conversion
     'batch.button': 'Traiter une base de données complète',
@@ -38,6 +41,7 @@ const translations = {
     'status.nonPdf': 'Fichier non-PDF',
     'status.unsupported': 'Format non supporté (PDF vectorisé attendu)',
     'status.noSignal': 'Aucun signal ECG vectoriel',
+    'status.noEcgPage': 'Pas d\'ECG détecté dans cette page',
     'status.noGrid': 'Quadrillage ECG non détecté — ce format ne peut pas être converti. Utilisez "Signaler" pour nous envoyer le fichier.',
     'status.sending': 'Envoi et conversion...',
     'status.error': 'Erreur',
@@ -172,6 +176,9 @@ const translations = {
     // DropZone
     'drop.label': 'Drop an ECG file here or click',
     'drop.sub': 'Vectorized PDF (GE MUSE, Schiller, Mortara, Philips...)',
+    'drop.preparing': 'Analysing files...',
+    'drop.preparingSingle': 'Reading and splitting PDF',
+    'drop.preparingProgress': 'File {done} / {total}',
 
     // Batch conversion
     'batch.button': 'Process a full database',
@@ -197,6 +204,7 @@ const translations = {
     'status.nonPdf': 'Not a PDF file',
     'status.unsupported': 'Unsupported format (vectorized PDF expected)',
     'status.noSignal': 'No vectorized ECG signal found',
+    'status.noEcgPage': 'No ECG detected on this page',
     'status.noGrid': 'ECG grid not detected — this format cannot be converted. Use "Report" to send us the file.',
     'status.sending': 'Sending & converting...',
     'status.error': 'Error',

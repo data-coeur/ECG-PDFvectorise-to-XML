@@ -41,6 +41,11 @@ export default function App() {
   const queueRunning = useRef(false);
   const abortRef = useRef(false);
 
+  // Non-null while handleFiles is running pdfjs+pdf-lib on the dropped files
+  // (splitting multi-page PDFs). Large PDFs take several seconds, so the
+  // DropZone flips to a "preparing" state to give immediate visual feedback.
+  const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null);
+
   // Derived: the currently-viewed item
   const activeItem = useMemo(() => batch.find(i => i.id === activeId) ?? null, [batch, activeId]);
   const ecgData = activeItem?.ecgData ?? null;
@@ -136,49 +141,55 @@ export default function App() {
       return;
     }
 
-    // Expand multi-page PDFs into one File per ECG-bearing page. Non-PDFs and
-    // single-page PDFs flow through unchanged. pdf-split runs vector-density
-    // detection per page and drops cover / summary pages before they hit the
-    // queue, so each item that ends up in the batch is always a real ECG page.
-    const expanded: File[] = [];
-    for (const f of files) {
-      const looksLikePdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-      if (!looksLikePdf) { expanded.push(f); continue; }
-      try {
-        const { files: split } = await expandMultiPagePdf(f);
-        if (split.length > 0) {
-          expanded.push(...split);
-        } else {
-          // Multi-page PDF with no ECG pages — queue the original so the
-          // normal pipeline surfaces a proper error for the user.
-          expanded.push(f);
+    // Flip the DropZone into a "preparing" state immediately so the user
+    // sees the app is working. The split step below can take several
+    // seconds on large multi-page PDFs.
+    setPreparing({ done: 0, total: files.length });
+
+    try {
+      // Expand multi-page PDFs into one File per page. pdf-split runs
+      // vector-density detection per page and tags each one as ECG or
+      // not — non-ECG pages (cover, summary, index…) are kept in the
+      // result so they can be surfaced in the batch with a specific
+      // "no ECG on this page" error instead of being silently dropped.
+      const expanded: { file: File; isEcg: boolean }[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        setPreparing({ done: i, total: files.length });
+        const looksLikePdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+        if (!looksLikePdf) { expanded.push({ file: f, isEcg: true }); continue; }
+        try {
+          const { pages } = await expandMultiPagePdf(f);
+          expanded.push(...pages);
+        } catch (err) {
+          console.warn('[handleFiles] pdf-split failed for', f.name, err);
+          expanded.push({ file: f, isEcg: true });
         }
-      } catch (err) {
-        console.warn('[handleFiles] pdf-split failed for', f.name, err);
-        expanded.push(f);
       }
-    }
 
-    if (expanded.length > MAX_BATCH) {
-      setShowBatch(true);
-      return;
-    }
+      if (expanded.length > MAX_BATCH) {
+        setShowBatch(true);
+        return;
+      }
 
-    clearImageCache();
-    const items: BatchItem[] = expanded.map(file => ({
-      id: crypto.randomUUID(),
-      file,
-      status: 'queued' as const,
-      ecgData: null,
-      error: null,
-      warning: null,
-    }));
-    setBatch(items);
-    setActiveId(null);
-    setConvertingIds(new Set());
-    setDownloadedIds(new Set());
-    processQueue(items);
-  }, [processQueue]);
+      clearImageCache();
+      const items: BatchItem[] = expanded.map(({ file, isEcg }) => ({
+        id: crypto.randomUUID(),
+        file,
+        status: isEcg ? ('queued' as const) : ('error' as const),
+        ecgData: null,
+        error: isEcg ? null : t('status.noEcgPage' as TranslationKey),
+        warning: null,
+      }));
+      setBatch(items);
+      setActiveId(null);
+      setConvertingIds(new Set());
+      setDownloadedIds(new Set());
+      processQueue(items.filter(i => i.status === 'queued'));
+    } finally {
+      setPreparing(null);
+    }
+  }, [processQueue, t]);
 
   const handleStop = useCallback(() => {
     abortRef.current = true;
@@ -236,7 +247,7 @@ export default function App() {
           <div className="mb-3">
             <BatchConversionButton />
           </div>
-          <DropZone onFiles={handleFiles} disabled={isProcessing} />
+          <DropZone onFiles={handleFiles} disabled={isProcessing} preparing={preparing} />
 
           {/* Report button — always visible when a file has been dropped */}
           {pdfFile && (
