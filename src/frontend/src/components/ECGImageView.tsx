@@ -123,6 +123,14 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
   const [showPdf, setShowPdf] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
+  // When the active ECG changes (batch switch), reset the layout selector to
+  // the new ECG's native layout. Without this, a format that was valid for the
+  // previous ECG (e.g. 3×4+1) stays selected even when the new ECG can't
+  // support it — the button ends up greyed out but the render still uses it.
+  useEffect(() => {
+    setSelectedLayout(defaultLayout);
+  }, [cacheKey, defaultLayout]);
+
   // Blob URL for the original PDF — (re)created whenever `showPdf` toggles on
   // or the underlying `pdfFile` changes (e.g. when switching ECGs in a batch).
   // The cleanup revokes the previous URL so we don't leak object URLs.
