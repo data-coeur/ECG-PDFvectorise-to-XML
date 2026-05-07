@@ -1,3 +1,8 @@
+// hl7aecg — sérialise les canaux ECG en XML "HL7 Annotated ECG (aECG)" R1
+// DSTU 2004, le format FDA de référence pour les ECGs cliniques.
+// Lead codes MDC, samples encodés en microvolts (entiers) sous SLIST_PQ.
+// Patient anonymisé. Appelé par routes/convert.
+
 import fs from 'fs';
 
 interface Channel { name: string; duration_s: number; sample_rate_hz: number }
@@ -22,97 +27,97 @@ const LEAD_CODES: Record<string, { code: string; displayName: string }> = {
   V6:  { code: 'MDC_ECG_LEAD_V6',  displayName: 'Lead V6' },
 };
 
-function esc(s: string): string {
+function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function uid(): string {
+function generateUid(): string {
   const now = Date.now();
   const rand = Math.floor(Math.random() * 1e9);
   return `2.16.840.1.113883.3.${now}.${rand}`;
 }
 
-function toHL7Time(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+function toHL7Time(date: Date): string {
+  const padZero = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}${padZero(date.getMonth() + 1)}${padZero(date.getDate())}${padZero(date.getHours())}${padZero(date.getMinutes())}${padZero(date.getSeconds())}`;
 }
 
-/**
- * Write HL7 aECG (Annotated ECG) XML — FDA-compliant format per HL7 aECG Implementation Guide.
- * Reference: HL7 Annotated ECG (aECG) R1 DSTU (2004).
- */
 export function writeHL7aECG(
-  channels: Channel[], resampled: number[][], nSamples: number,
-  sr: number, dur: number, filename: string,
+  channels: Channel[],
+  resampled: number[][],
+  sampleCount: number,
+  sampleRate: number,
+  _duration: number,
+  filename: string,
   meta?: { manufacturer?: string; layout?: string },
 ): void {
   const now = new Date();
-  const docId = uid();
-  const seriesId = uid();
+  const docId = generateUid();
+  const seriesId = generateUid();
   const timeStr = toHL7Time(now);
 
   const lines: string[] = [];
-  const w = (s: string) => lines.push(s);
+  const writeLine = (s: string) => lines.push(s);
 
-  w('<?xml version="1.0" encoding="UTF-8"?>');
-  w(`<AnnotatedECG xmlns="${HL7_NS}" xmlns:xsi="${XSI_NS}" xsi:schemaLocation="${SCHEMA_LOC}"` +
+  writeLine('<?xml version="1.0" encoding="UTF-8"?>');
+  writeLine(`<AnnotatedECG xmlns="${HL7_NS}" xmlns:xsi="${XSI_NS}" xsi:schemaLocation="${SCHEMA_LOC}"` +
     ` classCode="OBS" moodCode="EVN">`);
 
   // Document ID
-  w(`  <id root="${esc(docId)}"/>`);
-  w(`  <code code="93000" codeSystem="2.16.840.1.113883.6.12" codeSystemName="CPT4" displayName="Electrocardiogram"/>`);
-  w(`  <effectiveTime><low value="${timeStr}"/><high value="${timeStr}"/></effectiveTime>`);
+  writeLine(`  <id root="${escapeXml(docId)}"/>`);
+  writeLine(`  <code code="93000" codeSystem="2.16.840.1.113883.6.12" codeSystemName="CPT4" displayName="Electrocardiogram"/>`);
+  writeLine(`  <effectiveTime><low value="${timeStr}"/><high value="${timeStr}"/></effectiveTime>`);
 
   // Confidentiality
-  w('  <confidentialityCode code="N" codeSystem="2.16.840.1.113883.5.25"/>');
+  writeLine('  <confidentialityCode code="N" codeSystem="2.16.840.1.113883.5.25"/>');
 
   // Subject (anonymous)
-  w('  <subject typeCode="SBJ">');
-  w('    <trialSubject classCode="RESBJ">');
-  w('      <id extension="ANONYMOUS" root="2.16.840.1.113883.3.0"/>');
-  w('      <subjectDemographicPerson classCode="PSN" determinerCode="INSTANCE">');
-  w('        <name><given>Anonymous</given><family>Patient</family></name>');
-  w('      </subjectDemographicPerson>');
-  w('    </trialSubject>');
-  w('  </subject>');
+  writeLine('  <subject typeCode="SBJ">');
+  writeLine('    <trialSubject classCode="RESBJ">');
+  writeLine('      <id extension="ANONYMOUS" root="2.16.840.1.113883.3.0"/>');
+  writeLine('      <subjectDemographicPerson classCode="PSN" determinerCode="INSTANCE">');
+  writeLine('        <name><given>Anonymous</given><family>Patient</family></name>');
+  writeLine('      </subjectDemographicPerson>');
+  writeLine('    </trialSubject>');
+  writeLine('  </subject>');
 
   // Component — series
-  w('  <component typeCode="COMP">');
-  w('    <series classCode="OBSSER" moodCode="EVN">');
-  w(`      <id root="${esc(seriesId)}"/>`);
-  w('      <code code="RHYTHM" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC" displayName="Rhythm"/>');
-  w(`      <effectiveTime><low value="${timeStr}"/><high value="${timeStr}"/></effectiveTime>`);
+  writeLine('  <component typeCode="COMP">');
+  writeLine('    <series classCode="OBSSER" moodCode="EVN">');
+  writeLine(`      <id root="${escapeXml(seriesId)}"/>`);
+  writeLine('      <code code="RHYTHM" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC" displayName="Rhythm"/>');
+  writeLine(`      <effectiveTime><low value="${timeStr}"/><high value="${timeStr}"/></effectiveTime>`);
 
   // Author device
-  w('      <author typeCode="AUT">');
-  w('        <seriesAuthor classCode="ASSIGNED">');
-  w('          <assignedAuthorChoice classCode="DEV" determinerCode="INSTANCE">');
+  writeLine('      <author typeCode="AUT">');
+  writeLine('        <seriesAuthor classCode="ASSIGNED">');
+  writeLine('          <assignedAuthorChoice classCode="DEV" determinerCode="INSTANCE">');
   if (meta?.manufacturer) {
-    w(`            <manufacturerModelName>${esc(meta.manufacturer)}</manufacturerModelName>`);
+    writeLine(`            <manufacturerModelName>${escapeXml(meta.manufacturer)}</manufacturerModelName>`);
   }
-  w('            <playedManufacturedDevice classCode="MANU">');
-  w('              <manufacturerOrganization classCode="ORG" determinerCode="INSTANCE">');
-  w(`                <name>${esc(meta?.manufacturer || 'Unknown')}</name>`);
-  w('              </manufacturerOrganization>');
-  w('            </playedManufacturedDevice>');
-  w('          </assignedAuthorChoice>');
-  w('        </seriesAuthor>');
-  w('      </author>');
+  writeLine('            <playedManufacturedDevice classCode="MANU">');
+  writeLine('              <manufacturerOrganization classCode="ORG" determinerCode="INSTANCE">');
+  writeLine(`                <name>${escapeXml(meta?.manufacturer || 'Unknown')}</name>`);
+  writeLine('              </manufacturerOrganization>');
+  writeLine('            </playedManufacturedDevice>');
+  writeLine('          </assignedAuthorChoice>');
+  writeLine('        </seriesAuthor>');
+  writeLine('      </author>');
 
   // Sequence set — one sequenceSet containing all leads
-  w('      <component typeCode="COMP">');
-  w('        <sequenceSet classCode="OBS" moodCode="EVN">');
+  writeLine('      <component typeCode="COMP">');
+  writeLine('        <sequenceSet classCode="OBS" moodCode="EVN">');
 
   // Time axis component (shared across all leads)
-  w('          <component typeCode="COMP">');
-  w('            <sequence classCode="OBS" moodCode="EVN">');
-  w('              <code code="TIME_ABSOLUTE" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC"/>');
-  w(`              <value xsi:type="GLIST_PQ">`);
-  w(`                <head value="0" unit="s"/>`);
-  w(`                <increment value="${(1 / sr).toFixed(8)}" unit="s"/>`);
-  w(`              </value>`);
-  w('            </sequence>');
-  w('          </component>');
+  writeLine('          <component typeCode="COMP">');
+  writeLine('            <sequence classCode="OBS" moodCode="EVN">');
+  writeLine('              <code code="TIME_ABSOLUTE" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC"/>');
+  writeLine(`              <value xsi:type="GLIST_PQ">`);
+  writeLine(`                <head value="0" unit="s"/>`);
+  writeLine(`                <increment value="${(1 / sampleRate).toFixed(8)}" unit="s"/>`);
+  writeLine(`              </value>`);
+  writeLine('            </sequence>');
+  writeLine('          </component>');
 
   // Each lead as a component/sequence
   for (let i = 0; i < channels.length; i++) {
@@ -122,29 +127,29 @@ export function writeHL7aECG(
 
     // Encode samples: scale mV to microvolts (uV) as integers for compactness
     const samples = resampled[i];
-    const digits = new Array(nSamples);
-    for (let j = 0; j < nSamples; j++) {
+    const digits = new Array(sampleCount);
+    for (let j = 0; j < sampleCount; j++) {
       digits[j] = Math.round(samples[j] * 1000); // mV -> uV
     }
 
-    w('          <component typeCode="COMP">');
-    w('            <sequence classCode="OBS" moodCode="EVN">');
-    w(`              <code code="${esc(leadInfo.code)}" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC" displayName="${esc(leadInfo.displayName)}"/>`);
-    w(`              <value xsi:type="SLIST_PQ">`);
-    w(`                <origin value="0" unit="uV"/>`);
-    w(`                <scale value="1" unit="uV"/>`);
-    w(`                <digits>${digits.join(' ')}</digits>`);
-    w(`              </value>`);
-    w('            </sequence>');
-    w('          </component>');
+    writeLine('          <component typeCode="COMP">');
+    writeLine('            <sequence classCode="OBS" moodCode="EVN">');
+    writeLine(`              <code code="${escapeXml(leadInfo.code)}" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC" displayName="${escapeXml(leadInfo.displayName)}"/>`);
+    writeLine(`              <value xsi:type="SLIST_PQ">`);
+    writeLine(`                <origin value="0" unit="uV"/>`);
+    writeLine(`                <scale value="1" unit="uV"/>`);
+    writeLine(`                <digits>${digits.join(' ')}</digits>`);
+    writeLine(`              </value>`);
+    writeLine('            </sequence>');
+    writeLine('          </component>');
   }
 
   // Close sequenceSet, component, series, component, root
-  w('        </sequenceSet>');
-  w('      </component>');
-  w('    </series>');
-  w('  </component>');
-  w('</AnnotatedECG>');
+  writeLine('        </sequenceSet>');
+  writeLine('      </component>');
+  writeLine('    </series>');
+  writeLine('  </component>');
+  writeLine('</AnnotatedECG>');
 
   fs.writeFileSync(filename, lines.join('\n'), 'utf-8');
 }
