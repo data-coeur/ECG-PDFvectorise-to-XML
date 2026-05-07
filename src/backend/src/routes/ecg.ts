@@ -92,8 +92,8 @@ function makeBase(mfr: string) {
   return `ecg_${safe}_${ts}`;
 }
 
-// Convert ECG to HL7 aECG XML.
-// Other formats (EDF, WFDB, DICOM, HDF5, WebP) have been moved to src/_legacy/.
+// Convert ECG to HL7 aECG XML. Only the HL7 format is currently supported;
+// EDF / WFDB / DICOM / HDF5 / WebP writers were retired.
 ecgRouter.post('/convert/:format', async (req, res) => {
   try {
     const format = req.params.format as FormatKey;
