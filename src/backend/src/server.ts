@@ -1,3 +1,8 @@
+// server — bootstrap Express : CORS, JSON 60 MB, monte le router /api/ecg,
+// sert le frontend statique sur /ecg/, redirige / → /ecg/.
+// Lancé par Docker via CMD ["node", "dist/server.js"], écoute sur PORT (3000).
+// Raison : seul point d'entrée HTTP du backend.
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
