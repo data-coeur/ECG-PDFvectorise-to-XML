@@ -1,12 +1,9 @@
-// 07  extract-grid — locate the horizontal and vertical lines of the ECG
-// paper grid from the non-black polylines.
-//
-// We collect every long, very-straight polyline of grid colour (anything
-// outside the "black" range), deduplicate near-duplicates, then return
-// the sorted Y positions of horizontal lines and X positions of vertical
-// lines. When the PDF draws major (5 mm) and minor (1 mm) lines with
-// different stroke widths, we also surface the major-line subset so
-// downstream stages can snap baselines onto them.
+// 07  extract-grid — repère les lignes horizontales et verticales de la
+// grille millimétrée parmi les polylignes non-noires (couleur grille).
+// Filtre les polylignes longues et très droites, déduplique celles qui se
+// recouvrent, et — si la grille distingue lignes 1mm et 5mm par épaisseur —
+// remonte aussi la sous-liste des lignes majeures pour le snap de baseline.
+// In  : Polyline[] + viewport + profile. Out : GridInfo (positions H/V) ou null.
 
 import type { Polyline, GridInfo } from '../types';
 import type { ManufacturerProfile } from './profiles';

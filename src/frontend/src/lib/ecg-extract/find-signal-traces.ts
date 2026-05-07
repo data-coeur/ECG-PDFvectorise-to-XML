@@ -1,14 +1,8 @@
-// 06  find-signal-traces — among the (possibly thousands of) polylines
-// parsed from the PDF, keep only the ECG signal traces.
-//
-// Three filters, applied in order:
-//   1. Stroke colour is "black" (per the profile's blackThreshold)
-//   2. Enough points to be a real signal (profile.trace.minPoints)
-//   3. Size at least a fraction of the longest candidate (minSizeRatio)
-//      — drops short fragments that survive 1+2 but aren't real leads.
-//
-// Each surviving trace gets a bounding box attached for downstream stages
-// (layout detection, label pairing).
+// 06  find-signal-traces — parmi les (parfois des milliers de) polylignes
+// parsées, ne garder que les traces du signal ECG via 3 filtres : couleur
+// "noire" (selon profile.trace.blackThreshold), assez de points (minPoints),
+// taille suffisante vs la plus longue (minSizeRatio).
+// In  : Polyline[] + ManufacturerProfile. Out : Polyline[] avec bbox renseignée.
 
 import type { Polyline } from '../types';
 import type { ManufacturerProfile } from './profiles';

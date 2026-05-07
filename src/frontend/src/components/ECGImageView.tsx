@@ -1,3 +1,9 @@
+// ECGImageView — panneau côte-à-côte qui affiche l'image ECG rendue par
+// raw2paper et, optionnellement, le PDF original. Héberge le sélecteur de
+// layout (3×4, 6×2, 12×1) et déclenche /api/ecg/render-image quand on switche
+// d'item dans le batch. Cache module-level pour éviter les re-fetches.
+// Props : { data, cacheKey?, pdfFile? }. Monté par App.tsx après extraction réussie.
+
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { ECGData } from '../lib/types';

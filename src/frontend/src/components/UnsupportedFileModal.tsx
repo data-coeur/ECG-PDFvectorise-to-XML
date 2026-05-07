@@ -1,3 +1,9 @@
+// UnsupportedFileModal — popup d'erreur quand le fichier déposé n'est pas
+// un PDF vectorisé (raster, image, XML ECG, DICOM, inconnu…). Le message
+// affiché varie selon `kind`, et propose le bouton "Signaler" pour les cas
+// bordure (pdf-multi, dicom, xml-ecg) où on aimerait élargir le support.
+// Props : { open, onClose, kind, detail? }. Monté par App.tsx via setUnsupported().
+
 import { createPortal } from 'react-dom';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';

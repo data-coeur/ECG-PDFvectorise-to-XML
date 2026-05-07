@@ -1,17 +1,10 @@
-// 11  find-baselines — locate the 0 mV reference line for each lead.
-//
-// Two sources of information, in order of trust:
-//   1. Calibration pulses printed on the PDF (small black square waves of
-//      exactly 1 mV height): when present, give an exact baseline. Their
-//      bottom edge IS the 0 mV line.
-//   2. The trace itself, if no calibration is present: take the histogram
-//      mode of the trace's value-axis coordinates as the estimated
-//      isoelectric line, then snap onto the nearest major (5 mm) grid
-//      line so the baseline lands on a real printed gridline.
-//
-// The bbox centre of the trace was used historically but is biased by R-wave
-// amplitude (leads with tall R waves get a baseline that drifts upward,
-// leads with deep S waves drift downward) — never use it.
+// 11  find-baselines — localise la ligne 0 mV de référence pour chaque lead.
+// Deux sources, par ordre de fiabilité :
+//   1. Impulsions de calibration imprimées sur le PDF (carrés noirs 1 mV) ;
+//   2. La trace elle-même : mode de l'histogramme de ses Y (la ligne
+//      isoélectrique vu que P-Q-T-segment dominent), snappé sur la ligne
+//      majeure (5 mm) la plus proche pour atterrir sur un trait réel.
+// In  : polylines + scale + layout + grid?. Out : Y de baseline par trace.
 
 import type { Point, Polyline, Layout, ScaleInfo, GridInfo } from '../types';
 import type { ManufacturerProfile } from './profiles';

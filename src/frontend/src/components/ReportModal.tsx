@@ -1,3 +1,9 @@
+// ReportModal — formulaire de signalement d'un ECG mal extrait. Anonymise
+// localement le PDF (lib/pdf-anonymize) puis le pousse via /api/ecg/report,
+// qui le stocke côté serveur et poste un commentaire sur l'issue GitHub #3.
+// Props : { pdfFile, ecgData, onClose }. Ouvert depuis App.tsx (bouton "Signaler").
+// Raison : permettre l'amélioration des profils sans transmettre de PHI.
+
 import { useState, useCallback } from 'react';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';

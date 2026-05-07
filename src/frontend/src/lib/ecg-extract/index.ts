@@ -1,19 +1,21 @@
-// ECG signal extraction pipeline — entry point.
+// ecg-extract/index — chef d'orchestre de l'extraction signal ECG.
+// In  : un File (PDF). Out : ECGData (manufacturer + layout + 12-13 channels mV).
+// Appelé par App.tsx::processQueue. Lance les 13 étapes ci-dessous dans l'ordre,
+// chacune dans son propre fichier (voir le diagramme dans README.md de ce dossier).
 //
-// Pipeline (each step lives in its own file, in the order called below):
-//   01  parse-paths              PDF operators → polylines (color, width, points)
-//   02  detect-manufacturer      content signatures → profile name
-//   03  apply profile pre-process  manufacturer-specific polyline rewriting (e.g. Vectracor weld)
-//   04  rectify-orientation      detect 90/180/270° rotation, rotate polylines + labels
-//   05  extract-text-labels      pdfjs text items → lead labels (I, II, V1...)
-//   06  find-signal-traces       filter polylines down to 12 lead traces
-//   07  extract-grid             find horizontal & vertical grid lines
-//   08  compute-scale            grid spacing → pts/mm, pts/sec, pts/mV
+//   01  parse-paths              opérateurs PDF → polylignes (couleur, épaisseur, points)
+//   02  detect-manufacturer      signatures contenu → nom de profil
+//   03  apply profile pre-process  réécriture polylignes spécifique vendor (Vectracor weld)
+//   04  rectify-orientation      détecte rotation 90/180/270°, tourne polylignes + labels
+//   05  extract-text-labels      items texte pdfjs → labels de leads (I, II, V1...)
+//   06  find-signal-traces       filtre polylignes → 12 traces signal
+//   07  extract-grid             trouve les lignes horizontales et verticales de la grille
+//   08  compute-scale            espacement grille → pts/mm, pts/sec, pts/mV
 //   09  detect-layout            stacked / sequential / grid_4x3
-//   10  pair-traces-with-labels  positional matching trace ↔ lead name
-//   11  find-baselines           calibration pulses or grid-snapped mode
-//   12  convert-to-mv            polyline points → samples in millivolts
-//   13  build rhythm strip       repeat / clone lead II if needed
+//   10  pair-traces-with-labels  appariement positionnel trace ↔ nom de lead
+//   11  find-baselines           impulsions de calibration ou mode-snappé sur grille
+//   12  convert-to-mv            points polyligne → samples en millivolts
+//   13  build rhythm strip       répétition / clone du lead II si besoin
 
 import { pdfjsLib } from '../pdf-config';
 import type { PDFPageProxy, PDFDocumentProxy } from 'pdfjs-dist';

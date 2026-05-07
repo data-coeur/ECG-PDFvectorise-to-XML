@@ -1,3 +1,9 @@
+// translations — dictionnaires FR / EN clé → texte, plus le type
+// `TranslationKey` (intersection des clés des deux langues, pour repérer les
+// trous au compile-time). Interpolation : `{name}` dans le texte, remplacé par
+// LanguageContext.t(key, { name: '...' }).
+// Toute l'app appelle t('clef.dot.notation') ; ajouter une clef ici se voit partout.
+
 const translations = {
   fr: {
     // Header

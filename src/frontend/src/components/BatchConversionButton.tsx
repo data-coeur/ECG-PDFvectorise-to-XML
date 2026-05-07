@@ -1,3 +1,9 @@
+// BatchConversionButton — bouton "Process full database" qui ouvre la modal
+// expliquant comment traiter de gros volumes (managed service ou self-hosted).
+// État local : un booléen `open` qui contrôle l'affichage de la modal.
+// Utilisé par : App.tsx, juste au-dessus de la DropZone.
+// Raison : router les utilisateurs ayant > 100 fichiers vers une voie dédiée.
+
 import { useState } from 'react';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';

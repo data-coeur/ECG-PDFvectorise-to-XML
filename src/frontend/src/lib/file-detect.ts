@@ -1,6 +1,9 @@
-// File type detection — runs entirely in the browser, before any extraction.
-// Reads only the first few KB of the file, then performs magic-byte checks
-// and (for XML) a lightweight DOMParser inspection.
+// file-detect — classifie un fichier déposé en pdf-vector / pdf-raster /
+// image / xml-ecg / dicom / unknown via magic bytes + DOMParser pour XML +
+// inspection pdfjs pour PDF (compte les ops vectorielles).
+// In  : un File. Out : { kind: DetectedKind, detail?: string }.
+// Appelé par App.tsx::processQueue avant l'extraction pour router vers le
+// bon flow ou afficher UnsupportedFileModal.
 
 import { pdfjsLib } from './pdf-config';
 

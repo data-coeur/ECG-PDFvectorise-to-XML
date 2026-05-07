@@ -1,15 +1,9 @@
-/**
- * Client-side PDF anonymization — two modes:
- *
- * 1. "full"  — Strip all text EXCEPT lead labels (D1, aVF, V1…)
- * 2. "smart" — Strip only patient data (name, ID, birth date, sex),
- *              keep ECG info (measurements, settings, diagnoses, labels)
- *
- * Handles both plain-text PDFs (Schiller, Mortara) and encoded-font PDFs
- * (GE MUSE) via automatic detection + pdfjs fallback.
- *
- * Both modes also strip metadata, annotations, and XMP.
- */
+// pdf-anonymize — anonymise un PDF ECG côté client (jamais envoyé tel quel).
+// Deux modes : "full" supprime tout le texte sauf les labels de lead, "smart"
+// garde les mesures et diagnostics et ne supprime que les données patient.
+// In  : ArrayBuffer du PDF + AnonMode. Out : Uint8Array du PDF anonymisé.
+// Appelé par : ReportModal (avant POST /api/ecg/report) et FormatCards (téléchargement
+// "PDF anonymisé"). Raison : ne jamais transmettre de PHI hors du navigateur.
 
 import {
   PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream, PDFRef,

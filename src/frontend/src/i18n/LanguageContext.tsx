@@ -1,3 +1,9 @@
+// LanguageContext — provider React qui expose { lang, setLang, t } à toute
+// l'app. Persiste la langue choisie dans localStorage('ecg-lang'). La fonction
+// t(key, params?) lookup dans translations[lang] puis substitue les {placeholders}.
+// Utilisé par : main.tsx (au sommet de l'arbre) et tous les composants via useLanguage().
+// Raison : centraliser FR/EN, garder l'UI traduite sans framework lourd.
+
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import translations, { type Lang, type TranslationKey } from './translations';
 

@@ -1,3 +1,9 @@
+// InfoCard — bloc d'accueil affiché tant qu'aucun fichier n'est déposé.
+// 5 sections (principe, upload, extract, convert, privacy) générées en boucle
+// depuis un tableau de clés i18n et de path SVG.
+// Utilisé par : App.tsx (rendu conditionnel quand `batch.length === 0`).
+// Raison : présenter le projet et rassurer sur la confidentialité avant le drop.
+
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 

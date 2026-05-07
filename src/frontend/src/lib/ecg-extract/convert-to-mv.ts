@@ -1,18 +1,9 @@
-// 12  convert-to-mv — turn a polyline expressed in PDF coordinates into a
-// millivolt sample array, given the physical scale and the trace's 0 mV
-// baseline.
-//
-// Two paths depending on temporal spacing of the source points:
-//   - UNIFORM     (e.g. MUSE / matplotlib renderings) — use the original
-//                 samples directly. No interpolation, fine baseline detail
-//                 preserved exactly as drawn.
-//   - NON-UNIFORM (e.g. DICOM italian, where flat regions have fewer
-//                 points) — resample to a uniform 500 Hz grid via linear
-//                 interpolation between consecutive polyline points.
-//
-// "Uniform" means every inter-point time gap is within ±10 % of the
-// median gap. The threshold is intentionally tight so we only skip
-// resampling when the source really is regularly sampled.
+// 12  convert-to-mv — transforme une polyligne en coordonnées PDF en tableau
+// de samples mV, sachant le scale physique et le baseline 0 mV de la trace.
+// Deux chemins selon l'espacement temporel des points : si uniforme (ex. MUSE,
+// matplotlib), garde les samples tels quels (préserve les détails fins) ;
+// sinon, ré-échantillonne à 500 Hz par interpolation linéaire.
+// In  : Point[] + scale + layout + gridBaseline. Out : { samples: mV[], dur: s }.
 
 import type { Point, Layout, ScaleInfo } from '../types';
 

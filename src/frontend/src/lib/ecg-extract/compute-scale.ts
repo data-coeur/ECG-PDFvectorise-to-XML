@@ -1,10 +1,8 @@
-// 08  compute-scale — translate grid spacing (PDF points per millimetre)
-// into the physical scale factors the rest of the pipeline needs:
-//   - pmm   : average pts/mm
-//   - pps   : pts per second  (paper at 25 mm/s)
-//   - ppv   : pts per mV      (gain at 10 mm/mV)
-//   - pmmX, pmmY : per-axis pts/mm (used when X and Y don't match exactly,
-//                  e.g. on stretched scans)
+// 08  compute-scale — convertit l'espacement grille (pts/mm) en facteurs
+// physiques utilisés ensuite : pmm (pts/mm moyen), pps (pts/s à 25 mm/s),
+// ppv (pts/mV à 10 mm/mV), plus pmmX/pmmY pour les scans étirés où X≠Y.
+// In  : GridInfo (sortie de extract-grid). Out : ScaleInfo.
+// Raison : isoler les hypothèses ECG standards (25 mm/s, 10 mm/mV) en un point.
 
 import type { GridInfo, ScaleInfo } from '../types';
 

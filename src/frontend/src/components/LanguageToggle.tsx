@@ -1,3 +1,8 @@
+// LanguageToggle — petit bouton FR / EN dans le header de l'app.
+// Bascule la langue active du contexte i18n (persistée dans localStorage).
+// Utilisé par : App.tsx, dans la barre du haut.
+// Raison : laisser l'utilisateur choisir sa langue sans toucher à l'URL ni au compte.
+
 import { useLanguage } from '../i18n';
 
 export default function LanguageToggle() {

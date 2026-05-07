@@ -1,17 +1,9 @@
-// 10  pair-traces-with-labels — match each ECG trace to a lead name
-// (I, II, V1…) using the geometric position of both the trace and its
-// nearest text label.
-//
-// Pairing is *positional*, not based on reading the label text against the
-// trace itself: we sort both collections in the same axis order and map by
-// index. A previous attempt at greedy nearest-neighbour matching produced
-// duplicate / wrong assignments when label positions in the PDF didn't
-// perfectly align with their traces.
-//
-// Three layouts supported:
-//   - stacked_12x1        12 traces in one column, 12 labels next to them
-//   - grid_4x3            12 traces in a 4×3 grid + optional rhythm strip
-//   - sequential_6x2      12 traces in two columns of six (the most common)
+// 10  pair-traces-with-labels — apparie chaque trace ECG à un nom de lead
+// (I, II, V1…) par position géométrique. L'appariement est *positionnel* :
+// on trie traces et labels dans le même ordre d'axe et on mappe par index
+// (un nearest-neighbour glouton avait été essayé puis abandonné, trop fragile
+// quand un label ne s'aligne pas pile sur sa trace).
+// In  : traces + labels + layout + profile. Out : LabelledTrace[] (12 + rhythm).
 
 import type { Point, Polyline, Label, Layout } from '../types';
 import { LEAD_NAMES } from './lead-names';

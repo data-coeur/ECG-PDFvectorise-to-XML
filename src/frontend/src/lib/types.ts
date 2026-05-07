@@ -1,3 +1,9 @@
+// types — types partagés entre la pipeline d'extraction (lib/ecg-extract/),
+// les composants React et les utilitaires. On y trouve à la fois les types
+// "domaine" (Point, Polyline, Layout, ScaleInfo, GridInfo, ECGData, ECGChannel)
+// et "UI" (BatchItem, FormatInfo, ServerResponse).
+// Raison : un seul fichier d'imports pour tout ce qui circule entre modules.
+
 export interface Point { x: number; y: number }
 
 export interface Polyline {

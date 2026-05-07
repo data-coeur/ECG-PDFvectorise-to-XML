@@ -1,3 +1,9 @@
+// StepIndicator — fil d'ariane visuel des 4 étapes du parcours utilisateur :
+// upload → extract → send → download. Affiche l'étape courante en surbrillance
+// et coche celles déjà complétées.
+// Props : { current: Step; completed: Step[] }. Utilisé par App.tsx en haut de page.
+// Raison : donner un repère permanent sur la progression dans le pipeline frontend.
+
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 

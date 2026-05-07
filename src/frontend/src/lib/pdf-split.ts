@@ -1,14 +1,9 @@
-// Expand multi-page vectorized PDFs into one independent File per page.
-//
-// Every page — ECG or not — is copied into its own single-page PDFDocument
-// via pdf-lib and wrapped as a new File named `<base>_p<N>.pdf`. Each page
-// is tagged `isEcg: true` or `false` based on whether pdfjs reports enough
-// vector operations to plausibly hold a signal. Non-ECG pages (cover,
-// summary, index…) are still returned so the caller can show them in the
-// batch with a specific "no ECG" error instead of silently dropping them.
-//
-// Single-page files are returned unchanged so this helper can run
-// unconditionally on every dropped PDF.
+// pdf-split — explose un PDF multi-pages en un File indépendant par page,
+// chaque page taguée isEcg=true/false selon sa densité d'ops vectorielles.
+// In  : un File (le PDF déposé). Out : SplitPage[] dans l'ordre source.
+// Appelé par App.tsx::handleFiles avant la construction de la queue.
+// Raison : faire couler les multi-pages dans la pipeline mono-fichier existante
+// et permettre d'afficher les pages non-ECG comme erreurs explicites.
 
 import { PDFDocument } from 'pdf-lib';
 import { pdfjsLib } from './pdf-config';

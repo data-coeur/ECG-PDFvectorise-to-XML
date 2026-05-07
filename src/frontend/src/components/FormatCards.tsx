@@ -1,3 +1,9 @@
+// FormatCards — grille de cartes "convertir vers HL7 aECG / Image / PDF" pour
+// l'item actif et pour le batch entier. Gère le fetch vers /api/ecg/convert et
+// /api/ecg/render-image, le téléchargement (fichiers individuels ou ZIP) et
+// les modals de choix (PDF brut vs anonymisé, fichiers vs ZIP pour le batch).
+// Props : ECGData courant + tableau du batch. Monté par App.tsx après extraction.
+
 import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import JSZip from 'jszip';

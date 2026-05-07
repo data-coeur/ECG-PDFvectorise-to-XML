@@ -1,16 +1,10 @@
-// 02  detect-manufacturer — figure out which vendor produced the PDF.
-//
-// The cascade tries the cheapest signals first:
-//   1. Document metadata (Producer / Creator / Author) — most reliable when
-//      it identifies the vendor by name.
-//   2. Page size — Mortara/Burdick prints to oversized sheets (>2000 pt).
-//   3. A "per-segment subpath" fingerprint — Vectracor and a few Philips/
-//      Cardioline exports draw the signal as thousands of 2-point subpaths;
-//      this is so atypical it's a unique signature.
-//   4. Grid colour — Schiller variants colour their grid red or pink, and
-//      different shades pick out their two stroke patterns.
-//
-// When nothing matches we fall back to "Unknown" and the default profile.
+// 02  detect-manufacturer — identifie quel fabricant a produit le PDF.
+// Cascade des signaux les moins coûteux aux plus coûteux :
+//   1. Metadata (Producer/Creator/Author) — fiable quand présent
+//   2. Taille de page (>2000 pt → Mortara/Burdick)
+//   3. Empreinte per-segment (>3000 polylignes 2-pts → Vectracor)
+//   4. Couleur de grille (rouge pur → Schiller, rose → Schiller CS)
+// In  : metadata + viewport + Polyline[]. Out : nom string (sinon "Unknown").
 
 import type { Polyline } from '../../types';
 

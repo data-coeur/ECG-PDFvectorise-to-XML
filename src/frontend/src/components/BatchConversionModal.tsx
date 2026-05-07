@@ -1,3 +1,9 @@
+// BatchConversionModal — modal listant deux options pour traiter de gros
+// volumes d'ECG : "managed service" (contact email) et "self-hosted" (lien
+// GitHub + tutoriel). Rendue dans un portal au-dessus du reste de l'UI.
+// Props : { open: boolean; onClose: () => void }. Montée par BatchConversionButton.
+// Raison : éviter d'inonder le batch panel quand l'utilisateur dépasse MAX_BATCH.
+
 import { createPortal } from 'react-dom';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';

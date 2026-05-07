@@ -1,3 +1,9 @@
+// BatchPanel — liste des fichiers en cours de traitement, avec leur statut
+// (queued / detecting / extracting / done / error), un compteur global et un
+// bouton stop. Permet de cliquer sur un item pour l'afficher dans le viewer.
+// Props : { items, activeId, onSelect, onStop? }. Monté par App.tsx quand le batch
+// contient > 1 item ou qu'au moins un item a une erreur / un warning.
+
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import type { BatchItem } from '../lib/types';

@@ -1,6 +1,8 @@
-// Tiny helpers used by several pipeline stages. None of them have any
-// per-stage logic — they're just primitives that were duplicated across
-// files until we collected them here.
+// polyline-utils — helpers de bas niveau partagés par plusieurs étapes :
+// normalizeColor (gestion 0-255 vs 0-1), isBlackPolyline (filtre couleur),
+// computeBoundingBox (min/max + centre + span).
+// Importé par : parse-paths, find-signal-traces, extract-grid, find-baselines, index.ts.
+// Raison : éviter la duplication de ces 3 primitives dans chaque consumer.
 
 import type { Point, Polyline, BoundingBox } from '../types';
 

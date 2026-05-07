@@ -1,6 +1,8 @@
-// Registry of vendor profiles + the resolver that turns a manufacturer
-// name into a fully-populated `ManufacturerProfile` (defaults + vendor
-// overrides).
+// profiles/registry — table { nom → DeepPartial } des 6 fabricants supportés
+// + resolveProfile(name) qui applique deepMerge(DEFAULT_PROFILE, override).
+// In  : nom de fabricant (string). Out : ManufacturerProfile complet.
+// Appelé par index.ts juste après detect-manufacturer.
+// Raison : centraliser la résolution defaults+override dans un seul endroit.
 
 import { GE_MUSE } from './manufacturers/ge-muse';
 import { SCHILLER } from './manufacturers/schiller';

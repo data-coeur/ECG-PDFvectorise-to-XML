@@ -1,14 +1,9 @@
-// 09  detect-layout — figure out the page layout (which axis carries
-// time, whether voltage is inverted, how the 12 leads are arranged).
-//
-// Detection is two-step:
-//   1. Find the time axis by counting how many traces are monotonic in x
-//      vs y; whichever axis has at least `monotonicityThreshold` of
-//      traces monotonic wins.
-//   2. Among the supported layouts (stacked_12x1, sequential_6x2,
-//      grid_4x3), pick the one whose row/column count and aspect ratio
-//      best match the trace bounding boxes. Profiles can short-circuit
-//      this with `profile.layout.expectedLayout`.
+// 09  detect-layout — identifie le layout de la page : quel axe porte le
+// temps, si la tension est inversée, et comment les 12 leads sont disposés.
+// Détection en 2 étapes : (1) axe temps via comptage de monotonicité X vs Y ;
+// (2) parmi stacked_12x1 / sequential_6x2 / grid_4x3, prend celui dont le
+// nombre de rangs/colonnes correspond aux bbox des traces.
+// In  : traces + viewport + profile. Out : Layout { type, timeAxis, verticalInverted }.
 
 import type { Polyline, Layout } from '../types';
 import type { ManufacturerProfile } from './profiles';

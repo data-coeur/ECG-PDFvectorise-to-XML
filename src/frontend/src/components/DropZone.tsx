@@ -1,3 +1,9 @@
+// DropZone — zone de drag-and-drop / clic-pour-uploader des fichiers ECG.
+// Affiche soit un état neutre, soit "preparing" avec spinner pendant le split
+// multi-page (long sur les gros PDFs), soit un état désactivé pendant un traitement.
+// Props : { onFiles, disabled?, preparing? }. Monté par App.tsx en haut de page.
+// Raison : point d'entrée principal de l'app, premier contact avec le pipeline.
+
 import { useRef, useState, useCallback } from 'react';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';

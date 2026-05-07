@@ -1,11 +1,8 @@
-// Detect content-stream rotation (90 / 180 / 270°) by analysing the
-// monotonicity of the longest dark polylines, then rotate every polyline so
-// that downstream stages — which all assume time runs along x — can stay
-// unchanged.
-//
-// This is content-based: we never look at the page /Rotate metadata, nor at
-// the manufacturer profile. A user-rotated MUSE PDF and a landscape Mortara
-// take the exact same code path.
+// 04  rectify-orientation — détecte la rotation du content-stream (0/90/180/
+// 270°) en regardant la monotonicité des plus longues polylignes sombres,
+// puis tourne tout en convention "temps sur X" pour le reste de la pipeline.
+// In  : Polyline[] (post-postProcess) + viewport. Out : { polylines, vp, rotation }.
+// Raison : pdfjs ne respecte pas /Rotate ; on raisonne sur le contenu lui-même.
 
 import type { Point, Polyline } from '../types';
 

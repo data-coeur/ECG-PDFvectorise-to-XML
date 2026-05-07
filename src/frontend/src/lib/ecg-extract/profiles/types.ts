@@ -1,15 +1,8 @@
-// Profile shape and the canonical defaults.
-//
-// A `ManufacturerProfile` controls every per-manufacturer knob the pipeline
-// exposes: trace identification thresholds, grid detection rules,
-// calibration tolerance, layout heuristics, lead aliases, and two optional
-// hooks (`postProcessPolylines` and `forceRotation`) for vendors whose
-// PDFs need non-trivial pre-processing.
-//
-// `DEFAULT_PROFILE` below documents the value used when a profile leaves
-// a key unset. Vendor files in profiles/manufacturers/*.ts only override
-// the keys that differ — `deepMerge` (in registry.ts) fills the rest from
-// these defaults.
+// profiles/types — interface ManufacturerProfile (toutes les molettes par
+// fabricant : seuils traces, grille, calibration, layout, alias leads, hooks
+// postProcessPolylines et forceRotation) + DEFAULT_PROFILE (valeurs canoniques)
+// + utilitaire DeepPartial. Importé par registry.ts et tous les manufacturers/*.ts.
+// Raison : un seul endroit pour documenter ce qu'un profil peut surcharger.
 
 import type { Polyline } from '../../types';
 

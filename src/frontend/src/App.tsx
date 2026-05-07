@@ -1,3 +1,9 @@
+// App — chef d'orchestre de toute l'UI. Gère l'état du batch (queue de fichiers,
+// item actif, statuts), enchaîne split multi-page → détection type → extraction,
+// expose les modals (report, batch, unsupported) et compose les sous-composants
+// (DropZone, BatchPanel, ECGImageView, FormatCards…).
+// Monté par main.tsx, sous LanguageProvider. Pas de routage : tout se passe ici.
+
 import { useState, useCallback, useMemo, useRef } from 'react';
 import type { BatchItem } from './lib/types';
 import { extractFromPdf } from './lib/ecg-extract';

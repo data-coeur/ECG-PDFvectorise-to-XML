@@ -1,18 +1,9 @@
-// 01  parse-paths — turn pdfjs's flat operator list into our internal
-// polyline structure (each polyline = colour + width + array of points
-// in viewport coordinates).
-//
-// pdfjs gives us paths as `moveTo / lineTo / curveTo / stroke` operators
-// expressed in user-space coordinates relative to the current
-// transformation matrix (CTM). We track the CTM and apply it (combined
-// with the page's viewport transform) so every emitted point is already
-// in viewport coordinates.
-//
-// Two parse strategies:
-//   parseWithCTM         the default — honours `q / Q / cm` operators
-//   parseViewportOnly    fallback when CTM tracking yields out-of-bounds
-//                        points (some PDFs use the operator list in
-//                        non-standard ways)
+// 01  parse-paths — transforme la liste plate d'opérateurs pdfjs en
+// polylignes internes (couleur + épaisseur + points en coordonnées viewport).
+// Track la CTM (Current Transformation Matrix) au fur et à mesure pour que
+// chaque point émis soit déjà en coordonnées viewport. Fallback parseViewportOnly
+// si le tracking CTM produit des coords hors page (PDFs non-standards).
+// In  : opérateurs pdfjs + viewport. Out : Polyline[].
 
 import type { Point, Polyline } from '../types';
 import { OPS } from '../pdf-config';

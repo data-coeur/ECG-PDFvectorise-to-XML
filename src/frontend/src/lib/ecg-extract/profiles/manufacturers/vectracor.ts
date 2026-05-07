@@ -1,26 +1,23 @@
-// Vectracor / VectraPlex — and similar "per-segment subpath" ECG PDFs (some
-// Philips and Cardioline exports use the same pattern).
-//
-// These PDFs draw each ECG sample as its own 2-point subpath: the pen moves
-// to the previous sample's position, draws a 1-segment line to the next
-// sample, then lifts. A 12-lead page easily exceeds 5000 subpaths. The
-// default pipeline treats each subpath as its own polyline and then
-// `findSignalTraces` rejects everything because `minPoints > 50` is never reached.
-//
-// Fix: before anything else touches the polylines, walk them in drawing
-// order and re-weld consecutive 2-point segments whose endpoints match
-// (same colour, same stroke width, `next.start ≈ prev.end`). This yields
-// one long polyline per continuous pen-down stroke.
-//
-// Second wrinkle: Vectracor draws signal traces in red (not black), so even
-// after welding, `findSignalTraces`' black-colour filter rejects them. Rather than
-// relaxing the global colour threshold (which would risk picking up grid
-// lines on other manufacturers), we identify the dominant "long polyline"
-// colour after welding and remap it to pure black — all ECG signals on a
-// given page share one stroke setup, so this is both safe and generic.
+// Vectracor / VectraPlex — et autres PDFs "per-segment subpath" (certains
+// exports Philips et Cardioline). Branche un postProcessPolylines qui fusionne
+// les milliers de subpaths 2-points en polylignes continues, puis remappe la
+// couleur dominante en noir. Force aussi rotation=90° (PDFs portrait).
+// Détecté via comptage : >3000 polylignes dont >80% à exactement 2 points.
 
 import type { Polyline } from '../../../types';
 import type { DeepPartial, ManufacturerProfile } from '../types';
+
+// ── Détails du hook postProcessPolylines ──
+// Vectracor dessine chaque échantillon ECG comme un subpath 2-points isolé
+// (penDown → lineTo → penUp). Une page 12-leads dépasse facilement 5000 subpaths,
+// que `findSignalTraces` rejette tous (minPoints > 50 jamais atteint).
+// Fix en deux temps :
+//  1. Welder consécutivement les segments 2-points dont les extrémités matchent
+//     (même couleur, même épaisseur, next.start ≈ prev.end) → une longue polyligne
+//     par stroke continu.
+//  2. Vectracor dessine en rouge, pas en noir : on identifie le groupe (couleur,
+//     épaisseur) majoritaire parmi les polylignes longues post-weld et on le remappe
+//     en noir pur, ce qui le rend visible au filtre standard de findSignalTraces.
 
 /** Max gap (in PDF points) between one segment's end and the next segment's
  *  start for them to be considered part of the same continuous stroke. */
