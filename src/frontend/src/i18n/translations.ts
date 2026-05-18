@@ -7,7 +7,7 @@
 const translations = {
   fr: {
     // Header
-    'app.title': 'ECG mind',
+    'app.title': 'Capture ECG',
     'app.subtitle': 'De vos ECG (données sources, PDF vectoriel ou image) vers des formats numériques standards',
 
     // Steps
@@ -115,7 +115,7 @@ const translations = {
 
     // Info card
     'info.principle.title': 'Principe',
-    'info.principle.text': 'ECG mind convertit vos ECG en formats numériques standards, utilisables en clinique comme en recherche. Aujourd\'hui l\'outil prend en charge les PDF vectoriels ; d\'autres types d\'entrée et de sortie viendront s\'y ajouter. Les données patient ne quittent jamais votre poste — seul le signal numérique est transmis au serveur le temps de la conversion.',
+    'info.principle.text': 'Capture ECG convertit vos ECG en formats numériques standards, utilisables en clinique comme en recherche. Aujourd\'hui l\'outil prend en charge les PDF vectoriels ; d\'autres types d\'entrée et de sortie viendront s\'y ajouter. Les données patient ne quittent jamais votre poste — seul le signal numérique est transmis au serveur le temps de la conversion.',
     'info.upload.title': 'Upload',
     'info.upload.text': 'Déposez un ECG. Pour l\'instant, les fichiers acceptés sont les PDF vectoriels issus des principaux constructeurs (GE MUSE, Schiller, Mortara/Burdick…). La prise en charge des données sources (XML propriétaires) et des images est en cours de développement.',
     'info.extract.title': 'Extraction',
@@ -151,7 +151,7 @@ const translations = {
     'unsupported.detected': 'Format détecté',
     'unsupported.close': 'Fermer',
     'unsupported.accepted': 'Formats actuellement acceptés : PDF vectoriel issu d\'un appareil ECG (GE MUSE, Schiller, Mortara/Burdick…).',
-    'unsupported.pdf-raster': 'Ce fichier est un PDF, mais il s\'agit d\'un PDF image (scan ou export bitmap), pas d\'un PDF vectoriel. ECG mind a besoin du tracé sous forme de chemins vectoriels pour reconstruire le signal.',
+    'unsupported.pdf-raster': 'Ce fichier est un PDF, mais il s\'agit d\'un PDF image (scan ou export bitmap), pas d\'un PDF vectoriel. Capture ECG a besoin du tracé sous forme de chemins vectoriels pour reconstruire le signal.',
     'unsupported.image': 'La conversion à partir d\'images (JPEG, PNG, etc.) est encore en cours de développement.',
     'unsupported.xml-ecg': 'La conversion à partir de données sources XML est encore en cours de développement.',
     'unsupported.xml-other': 'Ce fichier XML n\'a pas été reconnu comme un ECG.',
@@ -161,7 +161,7 @@ const translations = {
     // Report unsupported ECG type
     'report.btn': 'Signaler un ECG non supporté',
     'report.title': 'Contribuez au développement',
-    'report.body': 'ECG mind est encore en développement et tous les formats ne sont pas encore reconnus. Si votre ECG ne s\'affiche pas correctement, vous pouvez nous l\'envoyer en un clic : nous l\'utiliserons pour améliorer l\'algorithme et ajouter le support de votre type d\'ECG dans une prochaine version. Le fichier est entièrement anonymisé (toutes les données patient sont supprimées) avant tout envoi.',
+    'report.body': 'Capture ECG est encore en développement et tous les formats ne sont pas encore reconnus. Si votre ECG ne s\'affiche pas correctement, vous pouvez nous l\'envoyer en un clic : nous l\'utiliserons pour améliorer l\'algorithme et ajouter le support de votre type d\'ECG dans une prochaine version. Le fichier est entièrement anonymisé (toutes les données patient sont supprimées) avant tout envoi.',
     'report.confirm': 'Anonymiser et envoyer',
     'report.cancel': 'Annuler',
     'report.sending': 'Anonymisation et envoi...',
@@ -170,7 +170,7 @@ const translations = {
   },
   en: {
     // Header
-    'app.title': 'ECG mind',
+    'app.title': 'Capture ECG',
     'app.subtitle': 'From your ECGs (source data, vectorized PDF or image) to standard digital formats',
 
     // Steps
@@ -278,7 +278,7 @@ const translations = {
 
     // Info card
     'info.principle.title': 'Principle',
-    'info.principle.text': 'ECG mind converts your ECGs into standard digital formats, usable in clinical practice and research. Today the tool handles vectorized PDFs; more input and output types will follow. Patient data never leaves your machine — only the digital signal is transmitted to the server, and only for the time the conversion takes.',
+    'info.principle.text': 'Capture ECG converts your ECGs into standard digital formats, usable in clinical practice and research. Today the tool handles vectorized PDFs; more input and output types will follow. Patient data never leaves your machine — only the digital signal is transmitted to the server, and only for the time the conversion takes.',
     'info.upload.title': 'Upload',
     'info.upload.text': 'Drop an ECG. For now, accepted files are vectorized PDFs from major manufacturers (GE MUSE, Schiller, Mortara/Burdick…). Support for source data (proprietary XML) and images is under development.',
     'info.extract.title': 'Extraction',
@@ -314,7 +314,7 @@ const translations = {
     'unsupported.detected': 'Detected format',
     'unsupported.close': 'Close',
     'unsupported.accepted': 'Currently accepted formats: vectorized PDF from an ECG device (GE MUSE, Schiller, Mortara/Burdick…).',
-    'unsupported.pdf-raster': 'This file is a PDF, but it is a raster PDF (scan or bitmap export), not a vectorized one. ECG mind needs the trace as vector paths to reconstruct the signal.',
+    'unsupported.pdf-raster': 'This file is a PDF, but it is a raster PDF (scan or bitmap export), not a vectorized one. Capture ECG needs the trace as vector paths to reconstruct the signal.',
     'unsupported.image': 'Conversion from images (JPEG, PNG, etc.) is still under development.',
     'unsupported.xml-ecg': 'Conversion from source XML data is still under development.',
     'unsupported.xml-other': 'This XML file was not recognized as an ECG.',
@@ -323,8 +323,8 @@ const translations = {
 
     // Report unsupported ECG type
     'report.btn': 'Report an unsupported ECG',
-    'report.title': 'Help us improve ECG mind',
-    'report.body': 'ECG mind is still under development and not every format is recognized yet. If your ECG doesn\'t display correctly, you can send it to us in one click: we\'ll use it to improve the algorithm and add support for your ECG type in a future release. The file is fully anonymized (all patient data removed) before any transmission.',
+    'report.title': 'Help us improve Capture ECG',
+    'report.body': 'Capture ECG is still under development and not every format is recognized yet. If your ECG doesn\'t display correctly, you can send it to us in one click: we\'ll use it to improve the algorithm and add support for your ECG type in a future release. The file is fully anonymized (all patient data removed) before any transmission.',
     'report.confirm': 'Anonymize & send',
     'report.cancel': 'Cancel',
     'report.sending': 'Anonymizing & sending...',
