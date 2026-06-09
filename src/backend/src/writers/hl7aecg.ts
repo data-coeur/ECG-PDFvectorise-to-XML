@@ -1,30 +1,30 @@
-// hl7aecg — sérialise les canaux ECG en XML "HL7 Annotated ECG (aECG)" R1
-// DSTU 2004, le format FDA de référence pour les ECGs cliniques.
-// Lead codes MDC, samples encodés en microvolts (entiers) sous SLIST_PQ.
-// Patient anonymisé. Appelé par routes/convert.
+// hl7aecg — sérialise les canaux ECG en XML "HL7 Annotated ECG (aECG)"
+// Conforme au format de référence LIRYC-IHU / ECGToolkit (C# Mono).
+// Structure validée sur hl7aecg_example.xml (LIRYC-IHU/hl7v3-aecg).
+// Appelé par routes/convert.
 
 import fs from 'fs';
 
 interface Channel { name: string; duration_s: number; sample_rate_hz: number }
 
-const HL7_NS = 'urn:hl7-org:v3';
-const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance';
-const SCHEMA_LOC = 'urn:hl7-org:v3 multicacheschemas/POCD_MT040101.xsd';
+const HL7_NS  = 'urn:hl7-org:v3';
+const VOC_NS  = 'urn:hl7-org:v3/voc';
+const XSI_NS  = 'http://www.w3.org/2001/XMLSchema-instance';
 
-// Standard 12-lead ECG codes (MDC / HL7 aECG lead codes)
-const LEAD_CODES: Record<string, { code: string; displayName: string }> = {
-  I:   { code: 'MDC_ECG_LEAD_I',   displayName: 'Lead I' },
-  II:  { code: 'MDC_ECG_LEAD_II',  displayName: 'Lead II' },
-  III: { code: 'MDC_ECG_LEAD_III', displayName: 'Lead III' },
-  aVR: { code: 'MDC_ECG_LEAD_AVR', displayName: 'Lead aVR' },
-  aVL: { code: 'MDC_ECG_LEAD_AVL', displayName: 'Lead aVL' },
-  aVF: { code: 'MDC_ECG_LEAD_AVF', displayName: 'Lead aVF' },
-  V1:  { code: 'MDC_ECG_LEAD_V1',  displayName: 'Lead V1' },
-  V2:  { code: 'MDC_ECG_LEAD_V2',  displayName: 'Lead V2' },
-  V3:  { code: 'MDC_ECG_LEAD_V3',  displayName: 'Lead V3' },
-  V4:  { code: 'MDC_ECG_LEAD_V4',  displayName: 'Lead V4' },
-  V5:  { code: 'MDC_ECG_LEAD_V5',  displayName: 'Lead V5' },
-  V6:  { code: 'MDC_ECG_LEAD_V6',  displayName: 'Lead V6' },
+// Standard 12-lead MDC codes
+const LEAD_CODES: Record<string, string> = {
+  I:   'MDC_ECG_LEAD_I',
+  II:  'MDC_ECG_LEAD_II',
+  III: 'MDC_ECG_LEAD_III',
+  aVR: 'MDC_ECG_LEAD_AVR',
+  aVL: 'MDC_ECG_LEAD_AVL',
+  aVF: 'MDC_ECG_LEAD_AVF',
+  V1:  'MDC_ECG_LEAD_V1',
+  V2:  'MDC_ECG_LEAD_V2',
+  V3:  'MDC_ECG_LEAD_V3',
+  V4:  'MDC_ECG_LEAD_V4',
+  V5:  'MDC_ECG_LEAD_V5',
+  V6:  'MDC_ECG_LEAD_V6',
 };
 
 function escapeXml(s: string): string {
@@ -34,12 +34,14 @@ function escapeXml(s: string): string {
 function generateUid(): string {
   const now = Date.now();
   const rand = Math.floor(Math.random() * 1e9);
+  // OID-safe: only digits and dots
   return `2.16.840.1.113883.3.${now}.${rand}`;
 }
 
 function toHL7Time(date: Date): string {
-  const padZero = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}${padZero(date.getMonth() + 1)}${padZero(date.getDate())}${padZero(date.getHours())}${padZero(date.getMinutes())}${padZero(date.getSeconds())}`;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}` +
+         `${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
 }
 
 export function writeHL7aECG(
@@ -47,109 +49,123 @@ export function writeHL7aECG(
   resampled: number[][],
   sampleCount: number,
   sampleRate: number,
-  _duration: number,
+  duration: number,
   filename: string,
   meta?: { manufacturer?: string; layout?: string },
 ): void {
-  const now = new Date();
-  const docId = generateUid();
-  const seriesId = generateUid();
-  const timeStr = toHL7Time(now);
+  const now    = new Date();
+  const end    = new Date(now.getTime() + duration * 1000);
+  const uid    = generateUid();
+  const tLow   = toHL7Time(now);
+  const tHigh  = toHL7Time(end);
+  const incr   = (1 / sampleRate).toFixed(8);  // e.g. "0.01000000" at 100 Hz
+  const mfr    = escapeXml(meta?.manufacturer || 'Cardio Capture');
+
+  // Scale factor: encode samples as integers in uV, scale=5 uV/digit (same as LIRYC example)
+  const SCALE_UV = 5;
 
   const lines: string[] = [];
-  const writeLine = (s: string) => lines.push(s);
+  const w = (s: string) => lines.push(s);
 
-  writeLine('<?xml version="1.0" encoding="UTF-8"?>');
-  writeLine(`<AnnotatedECG xmlns="${HL7_NS}" xmlns:xsi="${XSI_NS}" xsi:schemaLocation="${SCHEMA_LOC}"` +
-    ` classCode="OBS" moodCode="EVN">`);
+  w('<?xml version="1.0" encoding="UTF-8"?>');
+  w(`<AnnotatedECG xmlns="${HL7_NS}" xmlns:voc="${VOC_NS}" xmlns:xsi="${XSI_NS}"` +
+    ` xsi:schemaLocation="${HL7_NS}" classCode="OBS" moodCode="EVN" type="Observation">`);
 
-  // Document ID
-  writeLine(`  <id root="${escapeXml(docId)}"/>`);
-  writeLine(`  <code code="93000" codeSystem="2.16.840.1.113883.6.12" codeSystemName="CPT4" displayName="Electrocardiogram"/>`);
-  writeLine(`  <effectiveTime><low value="${timeStr}"/><high value="${timeStr}"/></effectiveTime>`);
-
-  // Confidentiality
-  writeLine('  <confidentialityCode code="N" codeSystem="2.16.840.1.113883.5.25"/>');
+  // Document identifiers
+  w(`  <id root="${uid}"/>`);
+  w(`  <code code="93000" codeSystem="2.16.840.1.113883.6.12" codeSystemName="CPT-4"/>`);
+  w(`  <effectiveTime>`);
+  w(`    <low value="${tLow}"/>`);
+  w(`    <high value="${tHigh}"/>`);
+  w(`  </effectiveTime>`);
+  w(`  <confidentialityCode code="N" codeSystem="2.16.840.1.113883.5.25"/>`);
 
   // Subject (anonymous)
-  writeLine('  <subject typeCode="SBJ">');
-  writeLine('    <trialSubject classCode="RESBJ">');
-  writeLine('      <id extension="ANONYMOUS" root="2.16.840.1.113883.3.0"/>');
-  writeLine('      <subjectDemographicPerson classCode="PSN" determinerCode="INSTANCE">');
-  writeLine('        <name><given>Anonymous</given><family>Patient</family></name>');
-  writeLine('      </subjectDemographicPerson>');
-  writeLine('    </trialSubject>');
-  writeLine('  </subject>');
+  w(`  <componentOf>`);
+  w(`    <timepointEvent>`);
+  w(`      <componentOf>`);
+  w(`        <subjectAssignment>`);
+  w(`          <subject>`);
+  w(`            <trialSubject>`);
+  w(`              <subjectDemographicPerson>`);
+  w(`                <name><given>Anonymous</given><family>Patient</family></name>`);
+  w(`                <administrativeGenderCode code="UN" codeSystem="2.16.840.1.113883.5.1"/>`);
+  w(`                <birthTime value=""/>`);
+  w(`              </subjectDemographicPerson>`);
+  w(`            </trialSubject>`);
+  w(`          </subject>`);
+  w(`        </subjectAssignment>`);
+  w(`      </componentOf>`);
+  w(`    </timepointEvent>`);
+  w(`  </componentOf>`);
 
-  // Component — series
-  writeLine('  <component typeCode="COMP">');
-  writeLine('    <series classCode="OBSSER" moodCode="EVN">');
-  writeLine(`      <id root="${escapeXml(seriesId)}"/>`);
-  writeLine('      <code code="RHYTHM" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC" displayName="Rhythm"/>');
-  writeLine(`      <effectiveTime><low value="${timeStr}"/><high value="${timeStr}"/></effectiveTime>`);
+  // Component > series
+  w(`  <component>`);
+  w(`    <series classCode="OBSSER" moodCode="EVN">`);
+  w(`      <id root="${uid}"/>`);
+  w(`      <code code="RHYTHM" codeSystem="2.16.840.1.113883.5.4" codeSystemName="ActCode" displayName="Rhythm Waveforms"/>`);
+  w(`      <effectiveTime>`);
+  w(`        <low value="${tLow}" inclusive="true"/>`);
+  w(`        <high value="${tHigh}" inclusive="false"/>`);
+  w(`      </effectiveTime>`);
 
   // Author device
-  writeLine('      <author typeCode="AUT">');
-  writeLine('        <seriesAuthor classCode="ASSIGNED">');
-  writeLine('          <assignedAuthorChoice classCode="DEV" determinerCode="INSTANCE">');
-  if (meta?.manufacturer) {
-    writeLine(`            <manufacturerModelName>${escapeXml(meta.manufacturer)}</manufacturerModelName>`);
-  }
-  writeLine('            <playedManufacturedDevice classCode="MANU">');
-  writeLine('              <manufacturerOrganization classCode="ORG" determinerCode="INSTANCE">');
-  writeLine(`                <name>${escapeXml(meta?.manufacturer || 'Unknown')}</name>`);
-  writeLine('              </manufacturerOrganization>');
-  writeLine('            </playedManufacturedDevice>');
-  writeLine('          </assignedAuthorChoice>');
-  writeLine('        </seriesAuthor>');
-  writeLine('      </author>');
+  w(`      <author>`);
+  w(`        <seriesAuthor>`);
+  w(`          <manufacturedSeriesDevice>`);
+  w(`            <manufacturerModelName>${mfr}</manufacturerModelName>`);
+  w(`          </manufacturedSeriesDevice>`);
+  w(`          <manufacturerOrganization>`);
+  w(`            <name>${mfr}</name>`);
+  w(`          </manufacturerOrganization>`);
+  w(`        </seriesAuthor>`);
+  w(`      </author>`);
 
-  // Sequence set — one sequenceSet containing all leads
-  writeLine('      <component typeCode="COMP">');
-  writeLine('        <sequenceSet classCode="OBS" moodCode="EVN">');
+  // sequenceSet
+  w(`      <component>`);
+  w(`        <sequenceSet>`);
 
-  // Time axis component (shared across all leads)
-  writeLine('          <component typeCode="COMP">');
-  writeLine('            <sequence classCode="OBS" moodCode="EVN">');
-  writeLine('              <code code="TIME_ABSOLUTE" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC"/>');
-  writeLine(`              <value xsi:type="GLIST_PQ">`);
-  writeLine(`                <head value="0" unit="s"/>`);
-  writeLine(`                <increment value="${(1 / sampleRate).toFixed(8)}" unit="s"/>`);
-  writeLine(`              </value>`);
-  writeLine('            </sequence>');
-  writeLine('          </component>');
+  // Time axis — GLIST_TS (not GLIST_PQ) as per LIRYC reference
+  w(`          <component>`);
+  w(`            <sequence>`);
+  w(`              <code code="TIME_ABSOLUTE" codeSystem="2.16.840.1.113883.5.4" codeSystemName="ActCode"/>`);
+  w(`              <value xsi:type="GLIST_TS">`);
+  w(`                <head value="${tLow}" unit="s"/>`);
+  w(`                <increment value="${incr}" unit="s"/>`);
+  w(`              </value>`);
+  w(`            </sequence>`);
+  w(`          </component>`);
 
-  // Each lead as a component/sequence
+  // One component per lead
   for (let i = 0; i < channels.length; i++) {
-    const ch = channels[i];
+    const ch       = channels[i];
     const leadName = ch.name.replace(/_rhythm$/, '');
-    const leadInfo = LEAD_CODES[leadName] || { code: `MDC_ECG_LEAD_${leadName.toUpperCase()}`, displayName: `Lead ${ch.name}` };
+    const code     = LEAD_CODES[leadName] ?? `MDC_ECG_LEAD_${leadName.toUpperCase()}`;
+    const samples  = resampled[i];
 
-    // Encode samples: scale mV to microvolts (uV) as integers for compactness
-    const samples = resampled[i];
-    const digits = new Array(sampleCount);
+    // Convert mV → scaled integers (uV / SCALE_UV)
+    const digits = new Array<number>(sampleCount);
     for (let j = 0; j < sampleCount; j++) {
-      digits[j] = Math.round(samples[j] * 1000); // mV -> uV
+      digits[j] = Math.round((samples[j] ?? 0) * 1000 / SCALE_UV);
     }
 
-    writeLine('          <component typeCode="COMP">');
-    writeLine('            <sequence classCode="OBS" moodCode="EVN">');
-    writeLine(`              <code code="${escapeXml(leadInfo.code)}" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC" displayName="${escapeXml(leadInfo.displayName)}"/>`);
-    writeLine(`              <value xsi:type="SLIST_PQ">`);
-    writeLine(`                <origin value="0" unit="uV"/>`);
-    writeLine(`                <scale value="1" unit="uV"/>`);
-    writeLine(`                <digits>${digits.join(' ')}</digits>`);
-    writeLine(`              </value>`);
-    writeLine('            </sequence>');
-    writeLine('          </component>');
+    w(`          <component>`);
+    w(`            <sequence>`);
+    w(`              <code code="${code}" codeSystem="2.16.840.1.113883.6.24" codeSystemName="MDC"/>`);
+    w(`              <value xsi:type="SLIST_PQ">`);
+    w(`                <origin value="0" unit="uV"/>`);
+    w(`                <scale value="${SCALE_UV}" unit="uV"/>`);
+    w(`                <digits>${digits.join(' ')}</digits>`);
+    w(`              </value>`);
+    w(`            </sequence>`);
+    w(`          </component>`);
   }
 
-  // Close sequenceSet, component, series, component, root
-  writeLine('        </sequenceSet>');
-  writeLine('      </component>');
-  writeLine('    </series>');
-  writeLine('  </component>');
-  writeLine('</AnnotatedECG>');
+  w(`        </sequenceSet>`);
+  w(`      </component>`);
+  w(`    </series>`);
+  w(`  </component>`);
+  w(`</AnnotatedECG>`);
 
   fs.writeFileSync(filename, lines.join('\n'), 'utf-8');
 }
