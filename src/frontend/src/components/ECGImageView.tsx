@@ -4,9 +4,11 @@
 // d'item dans le batch. Cache module-level pour éviter les re-fetches.
 // Props : { data, cacheKey?, pdfFile? }. Monté par App.tsx après extraction réussie.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { ECGData } from '../lib/types';
+import { pdfjsLib } from '../lib/pdf-config';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { useLanguage } from '../i18n';
 import type { TranslationKey } from '../i18n';
 
@@ -127,7 +129,8 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
   const [selectedLayout, setSelectedLayout] = useState<LayoutCode>(defaultLayout);
   const [showUnavailable, setShowUnavailable] = useState<UnavailableReason | null>(null);
   const [showPdf, setShowPdf] = useState(false);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // When the active ECG changes (batch switch), reset the layout selector to
   // the new ECG's native layout. Without this, a format that was valid for the
@@ -137,18 +140,58 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
     setSelectedLayout(defaultLayout);
   }, [cacheKey, defaultLayout]);
 
-  // Blob URL for the original PDF — (re)created whenever `showPdf` toggles on
-  // or the underlying `pdfFile` changes (e.g. when switching ECGs in a batch).
-  // The cleanup revokes the previous URL so we don't leak object URLs.
+  // Render page 1 of the original PDF straight onto a <canvas> via pdfjs, instead
+  // of handing the file to the browser's built-in PDF viewer (iframe). This gives
+  // a clean white render matching the extracted-image panel, with no toolbar/grey
+  // chrome. Re-runs whenever `showPdf` toggles on or the active ECG changes.
   useEffect(() => {
-    if (!showPdf || !pdfFile) {
-      setPdfUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(pdfFile);
-    setPdfUrl(url);
-    return () => { URL.revokeObjectURL(url); };
-  }, [showPdf, pdfFile]);
+    if (!showPdf || !pdfFile) return;
+
+    let cancelled = false;
+    let pdf: PDFDocumentProxy | null = null;
+    let renderTask: RenderTask | null = null;
+
+    setPdfLoading(true);
+
+    (async () => {
+      try {
+        const data = await pdfFile.arrayBuffer();
+        if (cancelled) return;
+        pdf = await pdfjsLib.getDocument({ data }).promise;
+        const page = await pdf.getPage(1);
+        if (cancelled) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        // Scale to the canvas container width × devicePixelRatio for a crisp render.
+        const dpr = window.devicePixelRatio || 1;
+        const base = page.getViewport({ scale: 1 });
+        const containerWidth = canvas.parentElement?.clientWidth || base.width;
+        const viewport = page.getViewport({ scale: (containerWidth * dpr) / base.width });
+
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        canvas.style.width = '100%';
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        renderTask = page.render({ canvasContext: ctx, viewport });
+        await renderTask.promise;
+        if (!cancelled) setPdfLoading(false);
+      } catch {
+        // RenderingCancelledException is expected on rapid ECG switches — ignore it.
+        if (!cancelled) setPdfLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { renderTask?.cancel(); } catch { /* noop */ }
+      try { pdf?.destroy(); } catch { /* noop */ }
+    };
+  }, [showPdf, pdfFile, cacheKey]);
 
   const target = targetForLayout(selectedLayout, sourceDuration);
   const fmt = toBackend(selectedLayout);
@@ -274,7 +317,7 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
       </div>
 
       {/* Image / loading / error + optional PDF side-by-side */}
-      <div className={showPdf && pdfUrl ? 'grid grid-cols-2 items-center gap-3' : ''}>
+      <div className={showPdf && pdfFile ? 'grid grid-cols-2 items-center gap-3' : ''}>
         {/* Rendered image */}
         <div>
           {loading && (
@@ -295,10 +338,16 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
           )}
         </div>
 
-        {/* PDF original — shown side-by-side when toggled */}
-        {showPdf && pdfUrl && (
-          <div className="overflow-hidden rounded-xl border border-white/40 bg-white">
-            <iframe src={pdfUrl} className="block h-full min-h-[500px] w-full" title="PDF original" />
+        {/* PDF original — rendered to canvas side-by-side when toggled */}
+        {showPdf && pdfFile && (
+          <div className="relative overflow-hidden rounded-xl border border-white/40 bg-white">
+            {pdfLoading && (
+              <div className="absolute inset-0 flex items-center justify-center gap-3 bg-white/50 backdrop-blur-sm">
+                <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
+                <span className="text-sm text-slate-500">{t('image.rendering' as TranslationKey)}</span>
+              </div>
+            )}
+            <canvas ref={canvasRef} className="block w-full" />
           </div>
         )}
       </div>

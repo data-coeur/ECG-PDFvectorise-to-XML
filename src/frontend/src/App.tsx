@@ -21,6 +21,7 @@ import InfoCard from './components/InfoCard';
 import ReportModal from './components/ReportModal';
 import UnsupportedFileModal from './components/UnsupportedFileModal';
 import { detectFileType, type Detected } from './lib/file-detect';
+import logoSrc from './assets/logo.png';
 import { expandMultiPagePdf } from './lib/pdf-split';
 
 const EXTRACT_TIMEOUT_MS = 30_000;

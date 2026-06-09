@@ -7,7 +7,7 @@
 const translations = {
   fr: {
     // Header
-    'app.title': 'Capture ECG',
+    'app.title': 'Cardio Capture',
     'app.subtitle': 'De vos ECG (données sources, PDF vectoriel ou image) vers des formats numériques standards',
 
     // Steps
@@ -170,7 +170,7 @@ const translations = {
   },
   en: {
     // Header
-    'app.title': 'Capture ECG',
+    'app.title': 'Cardio Capture',
     'app.subtitle': 'From your ECGs (source data, vectorized PDF or image) to standard digital formats',
 
     // Steps
