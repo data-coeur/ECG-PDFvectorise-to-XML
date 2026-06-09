@@ -68,8 +68,12 @@ export function writeHL7aECG(
   const w = (s: string) => lines.push(s);
 
   w('<?xml version="1.0" encoding="UTF-8"?>');
+  // schemaLocation MUST reference PORT_MT020001.xsd: the C# ECG Toolkit's aECG
+  // reader (ecg_converter) gates CheckFormat() on the schema filename being
+  // PORT_MT020001.xsd (or PORI_MT020001.xsd) — without it the file is rejected
+  // as "Not a HL7 aECG file". Verified by disassembling ECGCpluginaECG.dll.
   w(`<AnnotatedECG xmlns="${HL7_NS}" xmlns:voc="${VOC_NS}" xmlns:xsi="${XSI_NS}"` +
-    ` xsi:schemaLocation="${HL7_NS}" classCode="OBS" moodCode="EVN" type="Observation">`);
+    ` xsi:schemaLocation="${HL7_NS} ../schema/PORT_MT020001.xsd" classCode="OBS" moodCode="EVN" type="Observation">`);
 
   // Document identifiers
   w(`  <id root="${uid}"/>`);
