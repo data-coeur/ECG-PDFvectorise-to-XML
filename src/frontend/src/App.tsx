@@ -218,14 +218,12 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/30 bg-white/70 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-              <svg className="w-6 h-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="2,12 6,12 8,4 11,20 14,8 16,16 18,12 22,12" />
-              </svg>
-              {t('app.title')}
-            </h1>
-            <p className="text-xs text-slate-400">{t('app.subtitle')}</p>
+          <div className="flex items-center gap-3">
+            <img src={logoSrc} alt="Cardio Capture" className="h-9 w-auto" />
+            <div>
+              <h1 className="text-lg font-semibold text-slate-800">{t('app.title')}</h1>
+              <p className="text-xs text-slate-400">{t('app.subtitle')}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {batch.length > 0 && (
