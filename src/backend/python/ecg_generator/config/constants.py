@@ -105,30 +105,6 @@ FORMAT_DIMENSIONS = {
 }
 
 
-def get_format_dimensions(format_choice, page_size="a4"):
-    """
-    Get page dimensions for a specific format and page size
-
-    Args:
-        format_choice (str): ECG format name (e.g., "3x4", "3x4_paramedic", "6x2")
-        page_size (str): Page size ("a4" or "us_letter")
-
-    Returns:
-        tuple: (width_mm, height_mm, width_px, height_px)
-    """
-    if format_choice in FORMAT_DIMENSIONS:
-        dims = FORMAT_DIMENSIONS[format_choice]
-        width_mm = dims["page_width_mm"]
-        height_mm = dims["page_height_mm"]
-        width_px = int(width_mm * MM_TO_PX)
-        height_px = int(height_mm * MM_TO_PX)
-        return width_mm, height_mm, width_px, height_px
-    elif page_size in PAGE_SIZES:
-        ps = PAGE_SIZES[page_size]
-        return ps["width_mm"], ps["height_mm"], ps["width_px"], ps["height_px"]
-    else:
-        return A4_WIDTH_MM, A4_HEIGHT_MM, IMG_WIDTH_PX, IMG_HEIGHT_PX
-
 # Lead ordering patterns for 12-lead ECG display
 LEAD_ORDERS = {
     "normal": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"],  # Standard order

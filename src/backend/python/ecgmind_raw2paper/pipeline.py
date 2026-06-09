@@ -1,152 +1,133 @@
 """ECG image generation pipeline."""
 
 import os
-import base64
-import xml.etree.ElementTree as ET
-import numpy as np
+
+import matplotlib
 import matplotlib.pyplot as plt
+from PIL import Image as PILImage, ImageDraw, ImageFont
 
 from ecg_generator.in_out.data_source import create_data_source
 from ecg_generator.config.manager import validate_and_fix_config
-from ecg_generator.config.constants import (
-    DPI, IMG_WIDTH_PX, IMG_HEIGHT_PX, LAYOUT_TEMPLATES
-)
+from ecg_generator.config.constants import LAYOUT_TEMPLATES, MM_TO_PX, DPI
 from ecg_generator.layout.manager import (
     apply_lead_order, apply_lead_nomenclatures, create_inverse_mapping
 )
 from ecg_generator.layout.renderer import render_ecg_layout
-from ecg_generator.layout.figure_utils import save_figure_standard
-from ecg_generator.pipeline import calculate_layout_dimensions
+from ecg_generator.layout.figure_utils import _render_deferred_texts
 
-from ecgmind_raw2paper.config import build_standard_config
+from ecgmind_raw2paper.config import build_standard_config, resolve_logo_path, DEFAULT_LOGO
+from ecgmind_raw2paper.sizing import compute_canvas_layout
 
 
-def _read_source_duration_seconds(input_path, n_samples):
+LOGO_TARGET_HEIGHT_PX = 90                    # ~7.5 mm — drives the bottom strip height
+STRIP_BOTTOM_INSET_PX = int(1 * MM_TO_PX)     # 12 px — gap from image bottom to strip bottom
+STRIP_HORIZONTAL_INSET_PX = int(5 * MM_TO_PX) # 60 px — left inset for text, right inset for logo
+
+
+# ============================================================
+# EDIT HERE to change the bottom-left annotation text.
+# Set to "" or None to hide the strip entirely.
+BOTTOM_LEFT_TEXT = "Paper speed: 25 mm/s, Voltage gain: 10 mm/mV"
+# ============================================================
+
+# ============================================================
+# EDIT HERE to change the bottom-right citation text.
+# Set to "" or None to hide it.
+BOTTOM_RIGHT_TEXT = "Source: MIMIC-IV-ECG, PhysioNet (CHDL v1.5.0)"
+# ============================================================
+
+BOTTOM_LEFT_FONT_SIZE_PX = 36     # ~3 mm tall glyphs
+BOTTOM_TEXT_PAD_Y_PX = 12
+RIGHT_TEXT_TO_LOGO_GAP_PX = int(15 * MM_TO_PX)
+
+_FONT_PATH = os.path.join(
+    matplotlib.get_data_path(), "fonts", "ttf", "DejaVuSans.ttf"   #DejaVuSans-Bold.ttf
+)
+
+
+def _draw_bottom_left_text(pil_img, text, text_color):
+    """Paint `text` directly onto the canvas in the bottom-left corner.
+
+    Text is bottom-aligned with the logo via STRIP_BOTTOM_INSET_PX so both
+    sit on the same baseline within the LOGO_TARGET_HEIGHT_PX-tall strip area.
     """
-    Read the actual signal duration from the input file's <SampleBase> tag.
+    if not text:
+        return
+    draw = ImageDraw.Draw(pil_img)
+    font = ImageFont.truetype(_FONT_PATH, BOTTOM_LEFT_FONT_SIZE_PX)
 
-    The default `ecg_generator` renderer hardcodes a 10-second assumption
-    (renderer.py:1155). For our use case (signals of 5-10 seconds extracted
-    from various PDFs), we need to provide the real duration.
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_h = bbox[3] - bbox[1]
+    text_block_h = text_h + 2 * BOTTOM_TEXT_PAD_Y_PX
 
-    Returns:
-        float: duration in seconds, or None if not extractable.
+    x0 = STRIP_HORIZONTAL_INSET_PX
+    y0 = pil_img.height - STRIP_BOTTOM_INSET_PX - text_block_h
+    draw.text(
+        (x0 - bbox[0],
+         y0 + BOTTOM_TEXT_PAD_Y_PX - bbox[1]),
+        text, fill=text_color, font=font,
+    )
+
+
+def _draw_bottom_right_text(pil_img, text, text_color, right_edge_px):
+    """Paint `text` so its right edge sits at `right_edge_px`, bottom-aligned with the logo."""
+    if not text:
+        return
+    draw = ImageDraw.Draw(pil_img)
+    font = ImageFont.truetype(_FONT_PATH, BOTTOM_LEFT_FONT_SIZE_PX)
+
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    text_block_h = text_h + 2 * BOTTOM_TEXT_PAD_Y_PX
+
+    y0 = pil_img.height - STRIP_BOTTOM_INSET_PX - text_block_h
+    draw.text(
+        (right_edge_px - text_w - bbox[0],
+         y0 + BOTTOM_TEXT_PAD_Y_PX - bbox[1]),
+        text, fill=text_color, font=font,
+    )
+
+
+def _resize_logo(logo_path):
+    logo = PILImage.open(logo_path).convert("RGBA")
+    w, h = logo.size
+    new_h = LOGO_TARGET_HEIGHT_PX
+    new_w = round(w * new_h / h)
+    return logo.resize((new_w, new_h), PILImage.LANCZOS)
+
+
+def _paste_logo(pil_img, logo):
+    x = pil_img.width - logo.width - STRIP_HORIZONTAL_INSET_PX
+    y = pil_img.height - logo.height - STRIP_BOTTOM_INSET_PX
+    pil_img.alpha_composite(logo, (x, y))
+
+
+def generate_ecg_image(input_path, output_path, output_format="webp", theme="turquoise", logo=DEFAULT_LOGO):
     """
-    if not input_path.lower().endswith(".xml"):
-        return None
-    try:
-        tree = ET.parse(input_path)
-        sb_el = tree.find(".//SampleBase")
-        if sb_el is not None and sb_el.text:
-            sample_rate = float(sb_el.text)
-            if sample_rate > 0 and n_samples > 0:
-                return n_samples / sample_rate
-    except Exception:
-        pass
-    return None
-
-
-def _read_rhythm_strip_signal(input_path):
-    """
-    Read the rhythm strip channel ("II_rhythm") from a MUSE-style XML if present.
-
-    The standard ecg_generator XML parser only extracts the 12 standard leads
-    and drops everything else, but we use the channel name "II_rhythm" to
-    smuggle a longer rhythm signal that should be displayed on the bottom row.
-
-    Returns:
-        numpy.ndarray: rhythm strip signal in mV, or None if not present.
-    """
-    if not input_path.lower().endswith(".xml"):
-        return None
-    try:
-        tree = ET.parse(input_path)
-        root = tree.getroot()
-        for waveform in root.findall(".//Waveform"):
-            wt = waveform.find("WaveformType")
-            if wt is None or wt.text is None or wt.text.strip().upper() != "RHYTHM":
-                continue
-            for lead in waveform.findall("LeadData"):
-                lid = lead.find("LeadID")
-                if lid is None or lid.text is None:
-                    continue
-                if not lid.text.strip().lower().endswith("_rhythm"):
-                    continue
-                gain_el = lead.find("LeadAmplitudeUnitsPerBit")
-                wfd_el = lead.find("WaveFormData")
-                if gain_el is None or wfd_el is None or wfd_el.text is None:
-                    continue
-                gain = float(gain_el.text.strip())
-                b64 = wfd_el.text.replace('\n', '').replace('\r', '')
-                decoded = base64.b64decode(b64)
-                signal = np.frombuffer(decoded, dtype='<i2') * gain / 1000.0
-                return signal
-    except Exception:
-        pass
-    return None
-
-
-def generate_ecg_image(input_path, output_path, output_format="webp", format_override=None):
-    """
-    Generate a standardized ECG image from an ECG data file.
-
-    Supports XML, WFDB (.hea/.dat), HDF5, CSV, and NumPy formats.
+    Generate a standardized ECG image from an XML ECG file.
 
     Args:
-        input_path: Path to the input ECG file.
+        input_path: Path to the input XML ECG file.
         output_path: Path for the output image file.
         output_format: 'webp' (default) or 'png'.
-        format_override: If set (e.g. '3x4', '6x2+1'), overrides auto-detection
-                         from signal duration.
+        theme: Color theme name (default "turquoise").
+        logo: Logo name (key in LOGOS), filesystem path, or None to disable.
+            Defaults to "full_transparent".
 
     Returns:
         str: Path to the saved image.
     """
-    # 1. Load ECG data (auto-detects format)
+    logo_path = resolve_logo_path(logo)
+    # 1. Load ECG data.
     source = create_data_source(input_path)
-    ecg_id, leads_data = next(iter(source))
+    _ecg_id, leads_data = next(iter(source))
 
-    # If the XML carries a dedicated rhythm strip channel ("II_rhythm"),
-    # substitute lead II with this longer signal. The renderer handles this:
-    #  - Grid cell for lead II: shows signal[0:slice_samples] (first 2.5s)
-    #    via _col_slice_idx with _independent_cells=True
-    #  - Rhythm row (is_extra_line): draws signal[:extra_samples] across
-    #    the full page width in one pass, ignoring _independent_cells
-    rhythm_signal = _read_rhythm_strip_signal(input_path)
-    if rhythm_signal is not None and "II" in leads_data:
-        if len(rhythm_signal) > len(leads_data["II"]):
-            leads_data["II"] = rhythm_signal
-
-    # 2. Build and validate config
-    config = build_standard_config()
+    # 2. Build and validate config.
+    config = build_standard_config(theme=theme)
     config = validate_and_fix_config(config)
 
-    # Inject the real source duration so the renderer doesn't assume 10s
-    # (see renderer.py:1155 — uses config.get("_source_duration_s", 10))
-    duration = None
-    if leads_data:
-        n_samples = len(next(iter(leads_data.values())))
-        duration = _read_source_duration_seconds(input_path, n_samples)
-        if duration is not None:
-            config["_source_duration_s"] = duration
-
-    # Each cell of our layout contains a DIFFERENT lead with simultaneous data,
-    # not a different time slice of the same lead. Tell the renderer not to slice
-    # the signal between columns — each cell should show its lead's full duration.
-    config["_independent_cells"] = True
-
-    # Choose layout: explicit override from the frontend, or auto-detect from duration
-    if format_override and format_override in LAYOUT_TEMPLATES:
-        config["format_choice"] = format_override
-    elif duration is not None:
-        if duration <= 4:
-            config["format_choice"] = "3x4+1"
-        elif duration <= 8:
-            config["format_choice"] = "6x2+1"
-        else:
-            config["format_choice"] = "12x1"
-
-    # 3. Compute layout
+    # 3. Compute layout.
     layout_template = LAYOUT_TEMPLATES[config["format_choice"]]
     layout = apply_lead_order(
         layout_template, config["lead_order"], config.get("rythm_leads")
@@ -154,32 +135,60 @@ def generate_ecg_image(input_path, output_path, output_format="webp", format_ove
     inverse_mapping = create_inverse_mapping(config["lead_nomenclatures"])
     layout = apply_lead_nomenclatures(layout, config["lead_nomenclatures"])
 
-    page_width_px = config.get("page_width_px", IMG_WIDTH_PX)
-    page_height_px = config.get("page_height_px", IMG_HEIGHT_PX)
-    dimensions = calculate_layout_dimensions(config, len(layout), page_width_px, page_height_px)
-
-    # 4. Render
-    fig, ax, coord_data = render_ecg_layout(
-        leads_data, layout, config, dimensions, inverse_mapping,
-        page_width_px=page_width_px, page_height_px=page_height_px
+    # 4. Size the canvas to the actual signal extents (5 mm top, 5 mm left, 2 mm right,
+    #    2 mm + strip + 1 mm bottom).
+    has_text = bool(BOTTOM_LEFT_TEXT)
+    has_logo = bool(logo_path)
+    canvas = compute_canvas_layout(
+        leads_data, layout, config, inverse_mapping,
+        has_text=has_text, has_logo=has_logo,
+        logo_target_height_px=LOGO_TARGET_HEIGHT_PX,
     )
 
-    # Apply background color (matplotlib defaults to white, which makes
-    # the gold grid almost invisible)
-    bg = config.get("background_color", "#FDFAF5")
-    fig.patch.set_facecolor(bg)
-    ax.set_facecolor(bg)
-
-    # 5. Save via save_figure_standard — this triggers the PIL post-processing
-    # that renders deferred lead labels (I, II, V1...). A direct fig.savefig()
-    # would skip this and produce an image without labels.
-    save_figure_standard(
-        fig, output_path,
-        transparent=False,
-        expected_width_px=page_width_px,
-        expected_height_px=page_height_px,
-        coord_data=coord_data,
+    # 5. Render with the dynamic canvas dimensions and signal anchors.
+    fig, _ax, coord_data = render_ecg_layout(
+        leads_data, layout, config, inverse_mapping,
+        page_width_px=canvas.canvas_width_px,
+        page_height_px=canvas.canvas_height_px,
+        signal_area_x_start_override=canvas.signal_area_x_start_px,
+        signal_area_y_start_override=canvas.signal_area_y_start_px,
+        signal_area_width_override=canvas.signal_area_width_px,
+        signal_area_height_override=canvas.signal_area_height_px,
     )
+
+    # 6. Save.
+    save_kwargs = dict(dpi=DPI, pad_inches=0)
+    if output_format == "webp":
+        save_kwargs["pil_kwargs"] = {"lossless": True}
+
+    fig.savefig(output_path, **save_kwargs)
+    plt.close(fig)
+
+    # PIL post-pass: deferred lead labels, bottom-left annotation strip, logo.
+    has_right_text = bool(BOTTOM_RIGHT_TEXT)
+    if coord_data.deferred_texts or has_logo or has_text or has_right_text:
+        pil_img = PILImage.open(output_path).convert("RGBA")
+        if coord_data.deferred_texts:
+            _render_deferred_texts(
+                pil_img, coord_data.deferred_texts,
+                canvas.canvas_width_px, canvas.canvas_height_px,
+            )
+        if has_text:
+            _draw_bottom_left_text(pil_img, BOTTOM_LEFT_TEXT, config["bottom_text_color"])
+        logo_img = _resize_logo(logo_path) if has_logo else None
+        if has_right_text:
+            if has_logo:
+                logo_left_x = pil_img.width - logo_img.width - STRIP_HORIZONTAL_INSET_PX
+                right_edge_px = logo_left_x - RIGHT_TEXT_TO_LOGO_GAP_PX
+            else:
+                right_edge_px = pil_img.width - STRIP_HORIZONTAL_INSET_PX
+            _draw_bottom_right_text(pil_img, BOTTOM_RIGHT_TEXT, config["bottom_text_color"], right_edge_px)
+        if has_logo:
+            _paste_logo(pil_img, logo_img)
+        if output_format == "webp":
+            pil_img.save(output_path, "WEBP", lossless=True)
+        else:
+            pil_img.save(output_path)
 
     print(f"[OK] ECG image saved to {output_path}")
     return output_path

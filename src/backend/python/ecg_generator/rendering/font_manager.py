@@ -1,38 +1,33 @@
 """
-Font manager for ECG text rendering using PIL/Pillow
+Font manager for ECG text rendering using PIL/Pillow.
 
-Provides font loading, caching, and random selection for lead labels
-and speed/gain text. Uses bundled open-source TTF fonts for cross-platform
-compatibility.
-
-Fonts are rendered with PIL (ImageDraw.text) after matplotlib saves the
-figure, which is ~2.4x faster than matplotlib's text engine.
+Resolves a bundled TTF font by family + variant and returns a cached
+``PIL.ImageFont.FreeTypeFont``. The upstream package also exposed a random
+font chooser and a multilingual (non-Latin) fallback path — both are removed
+here since this repo renders Latin lead labels with a fixed font config.
 """
 
 import os
-import random
 from functools import lru_cache
+
 from PIL import ImageFont
 import matplotlib.font_manager as fm
 
-# Directory containing bundled TTF fonts
+
 _FONTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
 
-# Available font families with their file stems
-# Maps display name -> (filename_stem, type)
-# type: "sans" = sans-serif, "serif" = serif, "mono" = monospace
+# Display name -> (filename stem, category). Category is informational.
 FONT_FAMILIES = {
-    "Arimo":        ("Arimo",        "sans"),   # Arial equivalent
-    "Carlito":      ("Carlito",      "sans"),   # Calibri equivalent
-    "Caladea":      ("Caladea",      "serif"),  # Cambria equivalent
-    "Cousine":      ("Cousine",      "mono"),   # Courier New equivalent
-    "Inconsolata":  ("Inconsolata",  "mono"),   # Consolas equivalent
-    "Tinos":        ("Tinos",        "serif"),  # Times New Roman equivalent
-    "PTSans":       ("PTSans",       "sans"),   # Verdana-like
-    "DejaVuSans":   ("DejaVu Sans",  "sans"),   # Always available (matplotlib built-in)
+    "Arimo":        ("Arimo",        "sans"),
+    "Carlito":      ("Carlito",      "sans"),
+    "Caladea":      ("Caladea",      "serif"),
+    "Cousine":      ("Cousine",      "mono"),
+    "Inconsolata":  ("Inconsolata",  "mono"),
+    "Tinos":        ("Tinos",        "serif"),
+    "PTSans":       ("PTSans",       "sans"),
+    "DejaVuSans":   ("DejaVu Sans",  "sans"),
 }
 
-# Variant suffixes for TTF filenames
 _VARIANT_MAP = {
     (False, False): "-Regular",
     (True,  False): "-Bold",
@@ -42,10 +37,7 @@ _VARIANT_MAP = {
 
 
 def _find_font_path(family_name, bold=False, italic=False):
-    """Find TTF file path for a font family + variant.
-
-    Falls back through: exact variant -> regular -> DejaVu Sans.
-    """
+    """Resolve TTF path for a family + variant, falling back to DejaVu Sans."""
     stem, _ = FONT_FAMILIES.get(family_name, (family_name, "sans"))
     suffix = _VARIANT_MAP[(bold, italic)]
     candidates = [
@@ -55,7 +47,6 @@ def _find_font_path(family_name, bold=False, italic=False):
     for path in candidates:
         if os.path.isfile(path):
             return path
-    # Fallback to system DejaVu Sans (always available via matplotlib)
     try:
         props = fm.FontProperties(family="DejaVu Sans",
                                   weight="bold" if bold else "normal",
@@ -67,31 +58,11 @@ def _find_font_path(family_name, bold=False, italic=False):
 
 @lru_cache(maxsize=128)
 def get_pil_font(family_name, size_px, bold=False, italic=False, lang=None):
-    """Get a PIL ImageFont for the given family, size, and style.
+    """Return a PIL ImageFont for the given family/size/style.
 
-    Args:
-        family_name: Key from FONT_FAMILIES (e.g. "Arimo", "Carlito")
-        size_px: Font size in pixels (not points)
-        bold: Use bold variant
-        italic: Use italic variant
-        lang: Optional language code — if non-Latin, uses a Unicode font
-
-    Returns:
-        PIL.ImageFont.FreeTypeFont
+    ``lang`` is accepted for signature compatibility but ignored — the
+    multilingual path was removed with the rest of the medical-text feature.
     """
-    # For non-Latin languages, use the multilingual font resolver
-    if lang is not None:
-        _NON_LATIN_LANGS = {'zh', 'ja', 'ko', 'ar', 'ru', 'el', 'hi'}
-        if lang in _NON_LATIN_LANGS:
-            try:
-                from DataAugmentation.resources.multilingual_medical import (
-                    get_script_for_lang, resolve_font_for_script
-                )
-                script = get_script_for_lang(lang)
-                return resolve_font_for_script(script, int(size_px))
-            except Exception:
-                pass
-
     path = _find_font_path(family_name, bold, italic)
     if path:
         try:
@@ -99,36 +70,3 @@ def get_pil_font(family_name, size_px, bold=False, italic=False, lang=None):
         except (OSError, IOError):
             pass
     return ImageFont.load_default()
-
-
-def get_available_families():
-    """Return list of font family names that have at least a Regular TTF file."""
-    available = []
-    for name in FONT_FAMILIES:
-        path = _find_font_path(name, bold=False, italic=False)
-        if path and os.path.isfile(path):
-            available.append(name)
-    # Always include DejaVuSans as fallback
-    if "DejaVuSans" not in available:
-        available.append("DejaVuSans")
-    return available
-
-
-def choose_random_font_config(rng=None):
-    """Generate random font configuration for lead labels and speed/gain text.
-
-    Returns:
-        dict with keys:
-            font_family: str - family name from FONT_FAMILIES
-            font_bold: bool - use bold variant
-            font_italic: bool - use italic variant
-            font_size_factor: float - multiplier on base size (0.7 to 1.4)
-    """
-    r = rng or random
-    families = get_available_families()
-    return {
-        "font_family": r.choice(families),
-        "font_bold": r.random() < 0.60,     # 60% bold
-        "font_italic": r.random() < 0.15,   # 15% italic
-        "font_size_factor": r.uniform(0.85, 1.20),  # -15% to +20%
-    }

@@ -4,6 +4,7 @@ import argparse
 import os
 
 from ecgmind_raw2paper.pipeline import generate_ecg_image
+from ecgmind_raw2paper.config import THEMES, LOGOS, DEFAULT_LOGO
 
 SUPPORTED_EXTENSIONS = {'.xml', '.hea', '.dat', '.hdf5', '.h5', '.csv', '.npy', '.npz'}
 
@@ -28,8 +29,22 @@ def main():
         default="webp",
         help="Output image format (default: webp).",
     )
+    parser.add_argument(
+        "-t", "--theme",
+        choices=sorted(THEMES.keys()),
+        default="turquoise",
+        help="Color theme (default: turquoise).",
+    )
+    parser.add_argument(
+        "-l", "--logo",
+        choices=sorted(LOGOS.keys()) + ["none"],
+        default=DEFAULT_LOGO,
+        help=f"Logo printed in the bottom-right corner (default: {DEFAULT_LOGO}). "
+             f"Use 'none' to disable.",
+    )
 
     args = parser.parse_args()
+    logo = None if args.logo == "none" else args.logo
 
     if not os.path.isfile(args.input):
         parser.error(f"Input file not found: {args.input}")
@@ -46,7 +61,10 @@ def main():
         stem = os.path.splitext(args.input)[0]
         output_path = f"{stem}.{args.format}"
 
-    generate_ecg_image(args.input, output_path, output_format=args.format)
+    generate_ecg_image(
+        args.input, output_path,
+        output_format=args.format, theme=args.theme, logo=logo,
+    )
 
 
 if __name__ == "__main__":

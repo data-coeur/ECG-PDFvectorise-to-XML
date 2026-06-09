@@ -8,6 +8,34 @@ variations (standard vs. alternative naming like I/DI, V1/C1).
 import random
 from ecg_generator.config.constants import LEAD_ORDERS, LEAD_NOMENCLATURES
 
+# The 8 physically measured leads in standard ECG acquisition.
+# III, aVR, aVL, aVF are mathematically derived from I and II.
+_MEASURED_LEADS = {"I", "II", "V1", "V2", "V3", "V4", "V5", "V6"}
+
+
+def _max_lead_index(layout_template):
+    """Return the highest lead[N] index used in a layout template."""
+    max_idx = -1
+    for row in layout_template:
+        # Handle nested pages (e.g. 6x1;6x1)
+        cells = row if not (row and isinstance(row[0], list)) else [c for sub in row for c in sub]
+        for cell in cells:
+            if isinstance(cell, str) and cell.startswith("lead[") and cell.endswith("]"):
+                idx = int(cell[5:-1])
+                if idx > max_idx:
+                    max_idx = idx
+    return max_idx
+
+
+def _reorder_measured_first(lead_order):
+    """Reorder a lead list so the 8 measured leads come first (#110).
+
+    Preserves the relative order within measured and derived groups.
+    """
+    measured = [l for l in lead_order if l in _MEASURED_LEADS]
+    derived = [l for l in lead_order if l not in _MEASURED_LEADS]
+    return measured + derived
+
 
 def apply_lead_order(layout_template, lead_order_type, rhythm_leads=None):
     """
@@ -15,6 +43,9 @@ def apply_lead_order(layout_template, lead_order_type, rhythm_leads=None):
 
     Converts generic placeholders like "lead[0]", "lead[1]" into specific lead names
     according to the selected ordering scheme (normal, Cabrera, territory, shuffle).
+
+    For formats with fewer than 12 lead slots (e.g. 4x2 = 8 slots), measured leads
+    (I, II, V1-V6) are prioritized over derived leads (III, aVR, aVL, aVF) (#110).
 
     Args:
         layout_template (list): Generic layout template with "lead[N]" and "rhythm[N]" placeholders
@@ -30,7 +61,12 @@ def apply_lead_order(layout_template, lead_order_type, rhythm_leads=None):
         lead_order = base_leads.copy()
         random.shuffle(lead_order)
     else:
-        lead_order = LEAD_ORDERS[lead_order_type]
+        lead_order = list(LEAD_ORDERS[lead_order_type])
+
+    # For sub-12-lead formats, ensure measured leads fill the available slots (#110)
+    max_idx = _max_lead_index(layout_template)
+    if 0 <= max_idx < 11:
+        lead_order = _reorder_measured_first(lead_order)
 
     def _resolve_cell(cell):
         """Resolve a single cell template to a concrete lead name."""
