@@ -68,6 +68,10 @@ export interface ECGData {
   /** True when the source PDF provided a dedicated long rhythm strip channel
    *  (e.g. Mortara 12+1). False when lead II was cloned to fabricate one. */
   hasNativeRhythm: boolean;
+  /** Clockwise rotation (degrees) the extractor applied to rectify the page so
+   *  time runs left-to-right. The original PDF must be rendered with the same
+   *  rotation to match the extracted/rendered image orientation. */
+  rotation?: 0 | 90 | 180 | 270;
 }
 
 export interface ServerResponse {

@@ -87,6 +87,54 @@ export function clearImageCache() {
   imageCache.clear();
 }
 
+// Render page 1 of a PDF onto a <canvas> via pdfjs. `scaleFor` receives the
+// page's base (scale-1) viewport and returns the render scale, so callers
+// control sizing (inline = container width, lightbox = viewport height). The
+// backing store is sized to the rendered viewport; callers set canvas CSS size.
+// Returns a cleanup that cancels the in-flight render and frees the document —
+// avoids concurrent renders when the active ECG changes or the lightbox closes.
+function renderPdfPage(
+  pdfFile: File,
+  canvas: HTMLCanvasElement,
+  scaleFor: (base: { width: number; height: number }) => number,
+  onSettled?: () => void,
+  extraRotation: 0 | 90 | 180 | 270 = 0,
+): () => void {
+  let cancelled = false;
+  let pdf: PDFDocumentProxy | null = null;
+  let renderTask: RenderTask | null = null;
+  (async () => {
+    try {
+      const data = await pdfFile.arrayBuffer();
+      if (cancelled) return;
+      pdf = await pdfjsLib.getDocument({ data }).promise;
+      const page = await pdf.getPage(1);
+      if (cancelled) return;
+      // Match the extractor's rectification: add its clockwise rotation on top
+      // of the page's own /Rotate so the displayed PDF shares the rendered
+      // image's orientation.
+      const rotation = (page.rotate + extraRotation) % 360;
+      const base = page.getViewport({ scale: 1, rotation });
+      const viewport = page.getViewport({ scale: scaleFor(base), rotation });
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      renderTask = page.render({ canvasContext: ctx, viewport });
+      await renderTask.promise;
+    } catch {
+      // RenderingCancelledException is expected on rapid switches — ignore.
+    } finally {
+      if (!cancelled) onSettled?.();
+    }
+  })();
+  return () => {
+    cancelled = true;
+    try { renderTask?.cancel(); } catch { /* noop */ }
+    try { pdf?.destroy(); } catch { /* noop */ }
+  };
+}
+
 export function preloadImage(cacheKey: string, data: ECGData) {
   const sourceDuration = data.channels[0]?.duration_s ?? 0;
   const native = predictNativeLayout(sourceDuration);
@@ -131,6 +179,10 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
   const [showPdf, setShowPdf] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Lightbox shown fullscreen over a dimmed backdrop, null = closed. 'both'
+  // displays the rendered image and the original PDF side-by-side for comparison.
+  const [zoom, setZoom] = useState<null | 'image' | 'pdf' | 'both'>(null);
+  const zoomCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // When the active ECG changes (batch switch), reset the layout selector to
   // the new ECG's native layout. Without this, a format that was valid for the
@@ -146,52 +198,46 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
   // chrome. Re-runs whenever `showPdf` toggles on or the active ECG changes.
   useEffect(() => {
     if (!showPdf || !pdfFile) return;
-
-    let cancelled = false;
-    let pdf: PDFDocumentProxy | null = null;
-    let renderTask: RenderTask | null = null;
-
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     setPdfLoading(true);
+    const dpr = window.devicePixelRatio || 1;
+    const containerWidth = canvas.parentElement?.clientWidth || 0;
+    canvas.style.width = '100%';
+    // Backing store at container width × dpr for a crisp render; CSS keeps it responsive.
+    return renderPdfPage(
+      pdfFile, canvas,
+      base => ((containerWidth || base.width) * dpr) / base.width,
+      () => setPdfLoading(false),
+      data.rotation ?? 0,
+    );
+  }, [showPdf, pdfFile, cacheKey, data.rotation]);
 
-    (async () => {
-      try {
-        const data = await pdfFile.arrayBuffer();
-        if (cancelled) return;
-        pdf = await pdfjsLib.getDocument({ data }).promise;
-        const page = await pdf.getPage(1);
-        if (cancelled) return;
+  // Lightbox PDF: render page 1 large, fitted to ~90% of the viewport height.
+  // In 'both' mode it shares the width with the image, so cap it to ~46vw.
+  useEffect(() => {
+    if ((zoom !== 'pdf' && zoom !== 'both') || !pdfFile) return;
+    const canvas = zoomCanvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.height = '88vh';
+    canvas.style.width = 'auto';
+    canvas.style.maxWidth = zoom === 'both' ? '46vw' : '95vw';
+    return renderPdfPage(
+      pdfFile, canvas,
+      base => (window.innerHeight * 0.88 * dpr) / base.height,
+      undefined,
+      data.rotation ?? 0,
+    );
+  }, [zoom, pdfFile, data.rotation]);
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        // Scale to the canvas container width × devicePixelRatio for a crisp render.
-        const dpr = window.devicePixelRatio || 1;
-        const base = page.getViewport({ scale: 1 });
-        const containerWidth = canvas.parentElement?.clientWidth || base.width;
-        const viewport = page.getViewport({ scale: (containerWidth * dpr) / base.width });
-
-        canvas.width = Math.round(viewport.width);
-        canvas.height = Math.round(viewport.height);
-        canvas.style.width = '100%';
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        renderTask = page.render({ canvasContext: ctx, viewport });
-        await renderTask.promise;
-        if (!cancelled) setPdfLoading(false);
-      } catch {
-        // RenderingCancelledException is expected on rapid ECG switches — ignore it.
-        if (!cancelled) setPdfLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      try { renderTask?.cancel(); } catch { /* noop */ }
-      try { pdf?.destroy(); } catch { /* noop */ }
-    };
-  }, [showPdf, pdfFile, cacheKey]);
+  // Close the lightbox on Escape.
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoom]);
 
   const target = targetForLayout(selectedLayout, sourceDuration);
   const fmt = toBackend(selectedLayout);
@@ -332,15 +378,25 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
             </div>
           )}
           {!loading && !error && imgUrl && (
-            <div className="overflow-hidden rounded-xl border border-white/40 bg-white">
+            <button
+              type="button"
+              onClick={() => setZoom(showPdf && pdfFile ? 'both' : 'image')}
+              title={t('image.zoom' as TranslationKey)}
+              className="block w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/40 bg-white transition-shadow hover:shadow-lg"
+            >
               <img src={imgUrl} alt="ECG" className="block w-full" />
-            </div>
+            </button>
           )}
         </div>
 
         {/* PDF original — rendered to canvas side-by-side when toggled */}
         {showPdf && pdfFile && (
-          <div className="relative overflow-hidden rounded-xl border border-white/40 bg-white">
+          <button
+            type="button"
+            onClick={() => setZoom('both')}
+            title={t('image.zoom' as TranslationKey)}
+            className="relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/40 bg-white transition-shadow hover:shadow-lg"
+          >
             {pdfLoading && (
               <div className="absolute inset-0 flex items-center justify-center gap-3 bg-white/50 backdrop-blur-sm">
                 <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
@@ -348,7 +404,7 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
               </div>
             )}
             <canvas ref={canvasRef} className="block w-full" />
-          </div>
+          </button>
         )}
       </div>
 
@@ -379,6 +435,53 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
                 {t('unsupported.close' as TranslationKey)}
               </button>
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Lightbox — enlarged image / PDF in the foreground over a dimmed,
+          blurred backdrop. Click anywhere outside (or ✕ / Escape) to close. */}
+      {zoom && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md"
+          onClick={() => setZoom(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setZoom(null)}
+            aria-label={t('unsupported.close' as TranslationKey)}
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-xl text-slate-600 shadow-lg transition-all hover:bg-white"
+          >
+            ✕
+          </button>
+          <div className="relative flex items-center justify-center gap-4" onClick={e => e.stopPropagation()}>
+            {(zoom === 'image' || zoom === 'both') && imgUrl && (
+              <figure className="flex flex-col items-center gap-2">
+                {zoom === 'both' && (
+                  <figcaption className="text-xs font-semibold text-white/90">
+                    {t('image.zoom.generated' as TranslationKey)}
+                  </figcaption>
+                )}
+                <img
+                  src={imgUrl}
+                  alt="ECG"
+                  className={`rounded-lg bg-white object-contain shadow-2xl ${
+                    zoom === 'both' ? 'max-h-[88vh] max-w-[46vw]' : 'max-h-[92vh] max-w-[95vw]'
+                  }`}
+                />
+              </figure>
+            )}
+            {(zoom === 'pdf' || zoom === 'both') && (
+              <figure className="flex flex-col items-center gap-2">
+                {zoom === 'both' && (
+                  <figcaption className="text-xs font-semibold text-white/90">
+                    {t('image.zoom.original' as TranslationKey)}
+                  </figcaption>
+                )}
+                <canvas ref={zoomCanvasRef} className="rounded-lg bg-white shadow-2xl" />
+              </figure>
+            )}
           </div>
         </div>,
         document.body

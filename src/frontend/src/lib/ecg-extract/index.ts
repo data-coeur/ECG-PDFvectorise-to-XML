@@ -179,6 +179,7 @@ async function extract(pg: PDFPageProxy, pdf: PDFDocumentProxy, fn: string): Pro
     grid,
     channels: rhythmChannel ? [...standardChannels, rhythmChannel] : standardChannels,
     hasNativeRhythm,
+    rotation,
   };
 }
 
