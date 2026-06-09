@@ -35,7 +35,7 @@ def main():
 
     try:
         from ecgmind_raw2paper.pipeline import generate_ecg_image
-        generate_ecg_image(xml_path, out_path, output_format="webp", format_override=fmt)
+        generate_ecg_image(xml_path, out_path, output_format="webp")
     except Exception as e:
         import traceback
         print(f"ERROR: {e}", file=sys.stderr)
