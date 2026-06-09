@@ -12,7 +12,7 @@ THEMES = {
 }
 
 # Logo registry. Files live in <project root>/logo/.
-_LOGO_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "logo"))
+_LOGO_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "logo"))
 LOGOS = {
     "app":              "Logo_app.png",
     "app_transparent":  "Logo_app_transparent.png",
