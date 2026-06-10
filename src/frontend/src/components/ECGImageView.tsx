@@ -176,7 +176,7 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
 
   const [selectedLayout, setSelectedLayout] = useState<LayoutCode>(defaultLayout);
   const [showUnavailable, setShowUnavailable] = useState<UnavailableReason | null>(null);
-  const [showPdf, setShowPdf] = useState(false);
+  const [showPdf, setShowPdf] = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Lightbox shown fullscreen over a dimmed backdrop, null = closed. 'both'
