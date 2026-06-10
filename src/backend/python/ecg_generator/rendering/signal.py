@@ -102,9 +102,15 @@ def render_signal_with_pulse(ax, x0, y0, signal, config, slice_samples, j,
     Returns ``(show_pulse, label_x)``. The reference pulse (when shown) is
     placed to the right of the signal, separated by ``pulse_gap_mm``.
     """
-    start_idx = j * slice_samples
-    end_idx = (j + 1) * slice_samples
-    slice_signal = signal[start_idx:end_idx]
+    # _independent_cells: each cell holds a different lead, so show its first
+    # slice_samples (= the cell's duration). For standard leads slice_samples spans
+    # the whole lead (full beats kept); for a lead carrying a longer rhythm signal
+    # (II substituted with the 10 s strip) this shows just its first window, while
+    # the rhythm row draws the full strip. Otherwise (upstream) take column j.
+    if config.get("_independent_cells", False):
+        slice_signal = signal[:slice_samples]
+    else:
+        slice_signal = signal[j * slice_samples:(j + 1) * slice_samples]
 
     # Median-centered baseline (robust to QRS peaks) — aligns isoelectric line with y0.
     slice_signal = slice_signal - np.median(signal)

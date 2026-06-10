@@ -1,7 +1,10 @@
 """ECG image generation pipeline."""
 
+import base64
 import os
+import xml.etree.ElementTree as ET
 
+import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from PIL import Image as PILImage, ImageDraw, ImageFont
@@ -17,6 +20,59 @@ from ecg_generator.layout.figure_utils import _render_deferred_texts
 
 from ecgmind_raw2paper.config import build_standard_config, resolve_logo_path, DEFAULT_LOGO
 from ecgmind_raw2paper.sizing import compute_canvas_layout
+
+
+def _read_source_duration_seconds(input_path, n_samples):
+    """Real per-cell signal duration from the MUSE XML <SampleBase> (sample rate).
+
+    Upstream raw2paper assumes a 10 s recording, but our traces are per-cell
+    signals of varying real duration (5 s, 2.5 s…). Returns n_samples / rate, or
+    None when not extractable (renderer then falls back to its 10 s default).
+    """
+    if not str(input_path).lower().endswith(".xml"):
+        return None
+    try:
+        sb = ET.parse(input_path).find(".//SampleBase")
+        if sb is not None and sb.text:
+            rate = float(sb.text)
+            if rate > 0 and n_samples > 0:
+                return n_samples / rate
+    except Exception:
+        pass
+    return None
+
+
+def _read_rhythm_strip_signal(input_path):
+    """Read the long rhythm-strip channel ("*_rhythm" LeadID) from the MUSE XML.
+
+    The data-source parser only keeps the 12 standard leads; we smuggle a longer
+    rhythm signal under a LeadID ending in "_rhythm" so the bottom rhythm row can
+    show the full recording instead of a stretched copy of the 5 s standard lead.
+    Returns the signal in mV (ndarray), or None when absent.
+    """
+    if not str(input_path).lower().endswith(".xml"):
+        return None
+    try:
+        root = ET.parse(input_path).getroot()
+        for waveform in root.findall(".//Waveform"):
+            wt = waveform.find("WaveformType")
+            if wt is None or wt.text is None or wt.text.strip().upper() != "RHYTHM":
+                continue
+            for lead in waveform.findall("LeadData"):
+                lid = lead.find("LeadID")
+                if lid is None or lid.text is None or not lid.text.strip().lower().endswith("_rhythm"):
+                    continue
+                gain_el = lead.find("LeadAmplitudeUnitsPerBit")
+                wfd_el = lead.find("WaveFormData")
+                if gain_el is None or wfd_el is None or wfd_el.text is None:
+                    continue
+                gain = float(gain_el.text.strip())
+                b64 = wfd_el.text.replace("\n", "").replace("\r", "")
+                decoded = base64.b64decode(b64)
+                return np.frombuffer(decoded, dtype="<i2") * gain / 1000.0
+    except Exception:
+        pass
+    return None
 
 
 LOGO_TARGET_HEIGHT_PX = 90                    # ~7.5 mm — drives the bottom strip height
@@ -103,7 +159,8 @@ def _paste_logo(pil_img, logo):
     pil_img.alpha_composite(logo, (x, y))
 
 
-def generate_ecg_image(input_path, output_path, output_format="webp", theme="turquoise", logo=DEFAULT_LOGO):
+def generate_ecg_image(input_path, output_path, output_format="webp", theme="turquoise",
+                       logo=DEFAULT_LOGO, format_override=None):
     """
     Generate a standardized ECG image from an XML ECG file.
 
@@ -123,9 +180,42 @@ def generate_ecg_image(input_path, output_path, output_format="webp", theme="tur
     source = create_data_source(input_path)
     _ecg_id, leads_data = next(iter(source))
 
+    # Length of a standard (non-rhythm) lead — captured before the II substitution
+    # below, used to derive the real per-cell duration.
+    standard_n_samples = len(leads_data["II"]) if "II" in leads_data else (
+        len(next(iter(leads_data.values()))) if leads_data else 0)
+
+    # Substitute lead II with the long rhythm strip (smuggled as "*_rhythm") so the
+    # bottom rhythm row shows the full recording. The standard II cell still shows
+    # only its first window (signal[:slice_samples]) — see signal.py.
+    rhythm_signal = _read_rhythm_strip_signal(input_path)
+    if rhythm_signal is not None and "II" in leads_data and len(rhythm_signal) > len(leads_data["II"]):
+        leads_data["II"] = rhythm_signal
+
     # 2. Build and validate config.
     config = build_standard_config(theme=theme)
     config = validate_and_fix_config(config)
+
+    # Honour the layout chosen in the UI (e.g. 12x1, 6x2, 3x4+1). The frontend
+    # sends it as a query param, where Express decodes '+' to a space, so
+    # normalise ' ' -> '+' before matching LAYOUT_TEMPLATES. Without this the
+    # render ignores the button and always uses the config default (6x2+1).
+    if format_override:
+        fmt = str(format_override).replace(" ", "+")
+        if fmt in LAYOUT_TEMPLATES:
+            config["format_choice"] = fmt
+
+    # Each layout cell holds a DIFFERENT lead's complete per-cell signal (our
+    # extractor produces per-cell traces, not one full-duration recording to
+    # window across columns). Tell the renderer to (a) use the real signal
+    # duration instead of a hardcoded 10 s, and (b) show each cell's whole signal
+    # rather than slicing it by column. Without this, leads are stretched (wrong
+    # duration) or chopped to 1/n_cols of their beats.
+    config["_independent_cells"] = True
+    if standard_n_samples:
+        duration = _read_source_duration_seconds(input_path, standard_n_samples)
+        if duration:
+            config["_source_duration_s"] = duration
 
     # 3. Compute layout.
     layout_template = LAYOUT_TEMPLATES[config["format_choice"]]
@@ -143,6 +233,7 @@ def generate_ecg_image(input_path, output_path, output_format="webp", theme="tur
         leads_data, layout, config, inverse_mapping,
         has_text=has_text, has_logo=has_logo,
         logo_target_height_px=LOGO_TARGET_HEIGHT_PX,
+        source_duration_s=config.get("_source_duration_s", 10.0),
     )
 
     # 5. Render with the dynamic canvas dimensions and signal anchors.

@@ -27,7 +27,8 @@ class CanvasLayout:
     signal_area_height_px: float
 
 
-def _row_amplitude_extent(row, leads_data, inverse_mapping, slice_samples, n_cols, side):
+def _row_amplitude_extent(row, leads_data, inverse_mapping, slice_samples, n_cols, side,
+                          independent=False):
     """Return the max amplitude (mV) of `row`'s rendered slices on the given side.
 
     `side` is "top" (max above the baseline) or "bottom" (max below the baseline,
@@ -52,6 +53,9 @@ def _row_amplitude_extent(row, leads_data, inverse_mapping, slice_samples, n_col
         if full_extra:
             end = min(slice_samples * n_cols, len(sig))
             window = sig[:end] - med
+        elif independent:
+            # Each cell draws its lead's whole signal — measure the full extent.
+            window = sig - med
         else:
             start = j * slice_samples
             end = min((j + 1) * slice_samples, len(sig))
@@ -112,7 +116,12 @@ def compute_canvas_layout(leads_data, layout, config, inverse_mapping,
 
     # --- Horizontal extent (signal-data-independent) -------------------------
     # Mirrors renderer arithmetic so slice_samples below matches at draw time.
-    slice_duration = source_duration_s / n_cols
+    # _independent_cells: each cell shows a different lead's full signal, so a cell
+    # spans the lead's whole duration (not source_duration_s / n_cols).
+    if config.get("_independent_cells", False):
+        slice_duration = source_duration_s
+    else:
+        slice_duration = source_duration_s / n_cols
     segment_width_px = speed_px_per_s * slice_duration
     signal_block_width_px = (
         n_cols * segment_width_px + (n_cols - 1) * horiz_spacing_px
@@ -164,8 +173,10 @@ def compute_canvas_layout(leads_data, layout, config, inverse_mapping,
     slice_samples = int(slice_duration * samples_per_second)
 
     # --- Top extent above row-0 baseline -------------------------------------
+    _independent = config.get("_independent_cells", False)
     signal_top_mV = _row_amplitude_extent(
         layout[0], leads_data, inverse_mapping, slice_samples, n_cols, "top",
+        independent=_independent,
     )
     signal_top_above_baseline_px = signal_top_mV * gain_px_per_mV
     # Label glyph top: base_y = y0 - 5 mm; final_y = base_y + lead_text_shift_mm;
@@ -178,6 +189,7 @@ def compute_canvas_layout(leads_data, layout, config, inverse_mapping,
     # --- Bottom extent below last-row baseline -------------------------------
     signal_bottom_mV = _row_amplitude_extent(
         layout[-1], leads_data, inverse_mapping, slice_samples, n_cols, "bottom",
+        independent=_independent,
     )
     signal_bottom_below_baseline_px = signal_bottom_mV * gain_px_per_mV
 

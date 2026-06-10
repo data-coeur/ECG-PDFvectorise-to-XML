@@ -137,9 +137,10 @@ def _render_standard_layout(ax, layout, leads_data_noisy, config, inverse_mappin
                 # Extra lines - signal cropped to displayed duration (rhythm strips)
                 # Only render once per row (j == 0) to avoid duplicate rendering.
                 if j == 0:
-                    # Crop signal to displayed duration (handles non-standard speeds)
-                    extra_samples = slice_samples * n_cols
-                    extra_signal = signal[:extra_samples] if extra_samples < len(signal) else signal
+                    # Rhythm strip carries its own complete signal — draw it in
+                    # full across the row. (The old crop to slice_samples*n_cols
+                    # assumed a 10 s recording and chopped it to half.)
+                    extra_signal = signal
                     label_x = render_extra_line_signal(
                         ax, signal_area_x_start, y0, extra_signal, config, duration_s,
                         TIME_SCALE_PX_PER_S, AMP_SCALE_PX_PER_MV,
@@ -278,8 +279,10 @@ def render_ecg_layout(leads_data_noisy, layout, config, inverse_mapping,
         signal_area_width = page_width_px - 2 * margin_px - x_offset_px
         signal_area_height = signal_area_y_start - signal_area_y_end
 
-    # Temporal parameters
-    source_duration_s = 10  # Source XML always has 10s of data
+    # Temporal parameters. Upstream hardcodes a 10 s recording, but our traces are
+    # per-cell signals of varying real duration (5 s, 2.5 s…). The pipeline injects
+    # the true duration via _source_duration_s so cells aren't stretched/sliced wrong.
+    source_duration_s = config.get("_source_duration_s", 10)
     total_samples = len(next(iter(leads_data_noisy.values())))
     # Pulse width from config shape (sum of rise + plateau + fall)
     pulse_shape = config.get("reference_pulse", {}).get("pulse_shape", (0.04, 0.20, 0.04))
@@ -312,7 +315,13 @@ def render_ecg_layout(leads_data_noisy, layout, config, inverse_mapping,
     # - High speed (>25mm/s): signal fills more pixels per second, so truncate
     #   displayed duration to fit within available page width
     # - Low speed (<25mm/s): signal fills fewer pixels, leaving empty space (natural)
-    slice_duration_source = source_duration_s / n_cols
+    # _independent_cells: each cell holds a DIFFERENT lead's complete signal (our
+    # per-cell extraction), not a time-window of one full recording — so a cell
+    # spans the lead's whole duration, never source_duration_s / n_cols.
+    if config.get("_independent_cells", False):
+        slice_duration_source = source_duration_s
+    else:
+        slice_duration_source = source_duration_s / n_cols
     # Subtract horizontal spacing from available width so signals don't overflow
     horiz_spacing_total_px = 0
     if n_cols > 1:
