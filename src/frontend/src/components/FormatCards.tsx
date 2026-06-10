@@ -114,15 +114,23 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
   const [batchPrompt, setBatchPrompt] = useState<FmtDef | null>(null);
   const [showPdfBatchChoice, setShowPdfBatchChoice] = useState(false);
   const [showImageChoice, setShowImageChoice] = useState(false);
+  const [showXmlChoice, setShowXmlChoice] = useState(false);
+  // Whether the download filename is anonymized (content is already anonymous);
+  // when false the name is derived from the source PDF for the user's own filing.
+  const [anonName, setAnonName] = useState(true);
   // In-flight output format for the Image card (WebP / PDF), null when idle.
   const [imgFmt, setImgFmt] = useState<null | 'webp' | 'pdf'>(null);
 
   const hasBatch = (allEcgData?.length ?? 0) > 1;
 
+  // Download base name: anonymized (ecg_anonymise) or derived from the source PDF.
+  const srcBase = (ecgData.filename || 'ecg').replace(/\.[^./\\]+$/, '') || 'ecg';
+  const dlName = (ext: string, anon: boolean) => `${anon ? 'ecg_anonymise' : srcBase}.${ext}`;
+
   // Image card: render WebP or vector PDF at the currently selected layout, then
   // download. Same raw2paper render — only the output format differs. The filename
   // is anonymized (the render is built from the signal, no patient identity).
-  const handleImageDownload = useCallback(async (of: 'webp' | 'pdf') => {
+  const handleImageDownload = useCallback(async (of: 'webp' | 'pdf', anon: boolean) => {
     const fmt = FORMATS.find(f => f.key === 'image')!;
     setShowImageChoice(false);
     setImgFmt(of);
@@ -132,14 +140,14 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
         ? { target: imageSel.target, fmt: imageSel.fmt, outputFormat: of }
         : undefined;
       const link = await convertOne(fmt, ecgData, 0, render);
-      triggerDownload({ href: link.href, name: `ecg_anonymise.${of}` });
+      triggerDownload({ href: link.href, name: dlName(of, anon) });
       onConvertDone?.();
     } catch (e) {
       console.error('[image]', of, e);
     } finally {
       setImgFmt(null);
     }
-  }, [ecgData, imageSel, onConvertStart, onConvertDone]);
+  }, [ecgData, imageSel, onConvertStart, onConvertDone, dlName]);
 
   // Always anonymized — both the PDF content AND the filename (the original name
   // can carry patient identity, e.g. "LASTNAME_FIRSTNAME_…pdf").
@@ -163,20 +171,23 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
     }
   }, [pdfFile]);
 
-  const handleConvert = useCallback(async (fmt: FmtDef) => {
+  const handleConvert = useCallback(async (fmt: FmtDef, anon = true) => {
+    setShowXmlChoice(false);
     setStates(s => ({ ...s, [fmt.key]: 'loading' }));
     onConvertStart?.();
     try {
       const link = await convertOne(fmt, ecgData, 0);
-      triggerDownload(link);
-      setDownloads(s => ({ ...s, [fmt.key]: link }));
+      // Content is already anonymous; the choice only sets the download filename.
+      const dl = { href: link.href, name: dlName(fmt.ext, anon) };
+      triggerDownload(dl);
+      setDownloads(s => ({ ...s, [fmt.key]: dl }));
       setStates(s => ({ ...s, [fmt.key]: 'done' }));
       onConvertDone?.();
     } catch (e) {
       console.error('[convert]', fmt.key, e);
       setStates(s => ({ ...s, [fmt.key]: 'error' }));
     }
-  }, [ecgData, onConvertStart, onConvertDone]);
+  }, [ecgData, onConvertStart, onConvertDone, dlName]);
 
   const handleConvertAll = useCallback(async (fmt: FmtDef, mode: 'files' | 'zip') => {
     if (!allEcgData || allEcgData.length <= 1) return;
@@ -297,7 +308,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                 )}
                 {!isWip && state === 'idle' && fmt.key !== 'pdfvec' && fmt.key !== 'image' && (
                   <button
-                    onClick={() => handleConvert(fmt)}
+                    onClick={() => setShowXmlChoice(true)}
                     disabled={disabled}
                     className="rounded-lg bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -458,9 +469,13 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
         >
           <div className="glass-card w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
             <h3 className="mb-3 text-sm font-semibold text-slate-700">{t('fmt.img.title' as TranslationKey)}</h3>
+            <label className="mb-3 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" checked={anonName} onChange={e => setAnonName(e.target.checked)} className="accent-primary" />
+              {t('fmt.anonName' as TranslationKey)}
+            </label>
             <div className="space-y-2">
               <button
-                onClick={() => handleImageDownload('webp')}
+                onClick={() => handleImageDownload('webp', anonName)}
                 className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm">🖼️</span>
@@ -470,7 +485,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                 </div>
               </button>
               <button
-                onClick={() => handleImageDownload('pdf')}
+                onClick={() => handleImageDownload('pdf', anonName)}
                 className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm">📄</span>
@@ -486,6 +501,38 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                 className="rounded-lg bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-300"
               >
                 {t('unsupported.close' as TranslationKey)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* HL7 aECG XML download popup: filename anonymized or source-derived. */}
+      {showXmlChoice && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-md"
+          onClick={() => setShowXmlChoice(false)}
+        >
+          <div className="glass-card w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="mb-1 text-sm font-semibold text-slate-700">{t('fmt.xml.title' as TranslationKey)}</h3>
+            <p className="mb-3 text-[10px] text-slate-400">{t('fmt.xml.note' as TranslationKey)}</p>
+            <label className="mb-3 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" checked={anonName} onChange={e => setAnonName(e.target.checked)} className="accent-primary" />
+              {t('fmt.anonName' as TranslationKey)}
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowXmlChoice(false)}
+                className="rounded-lg bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-300"
+              >
+                {t('unsupported.close' as TranslationKey)}
+              </button>
+              <button
+                onClick={() => handleConvert(FORMATS.find(f => f.key === 'hl7aecg')!, anonName)}
+                className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-white transition-all hover:bg-primary-dark"
+              >
+                ↓ {t('fmt.download')}
               </button>
             </div>
           </div>

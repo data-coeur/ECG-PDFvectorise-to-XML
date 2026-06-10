@@ -89,6 +89,9 @@ const translations = {
     'fmt.img.webpDesc': 'Image matricielle du tracé ECG.',
     'fmt.img.pdf': 'PDF vectoriel',
     'fmt.img.pdfDesc': 'PDF vectoriel scalable, même mise en page que l\'image.',
+    'fmt.anonName': 'Nom de fichier anonymisé',
+    'fmt.xml.title': 'Télécharger le HL7 aECG XML',
+    'fmt.xml.note': 'Le contenu est déjà anonyme (aucune donnée patient). Le choix porte sur le nom du fichier.',
     'fmt.error': 'Erreur',
 
     // Downloads
@@ -259,6 +262,9 @@ const translations = {
     'fmt.img.webpDesc': 'Raster image of the ECG trace.',
     'fmt.img.pdf': 'Vector PDF',
     'fmt.img.pdfDesc': 'Scalable vector PDF, same layout as the image.',
+    'fmt.anonName': 'Anonymized filename',
+    'fmt.xml.title': 'Download the HL7 aECG XML',
+    'fmt.xml.note': 'The content is already anonymous (no patient data). The choice only affects the filename.',
     'fmt.error': 'Error',
 
     // Downloads
