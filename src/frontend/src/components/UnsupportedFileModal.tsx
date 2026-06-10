@@ -1,7 +1,7 @@
 // UnsupportedFileModal — popup d'erreur quand le fichier déposé n'est pas
-// un PDF vectorisé (raster, image, XML ECG, DICOM, inconnu…). Le message
+// un PDF vectorisé (raster, image, XML, DICOM, inconnu…). Le message
 // affiché varie selon `kind`, et propose le bouton "Signaler" pour les cas
-// bordure (pdf-multi, dicom, xml-ecg) où on aimerait élargir le support.
+// bordure (pdf-multi, dicom…) où on aimerait élargir le support.
 // Props : { open, onClose, kind, detail? }. Monté par App.tsx via setUnsupported().
 
 import { createPortal } from 'react-dom';
@@ -21,8 +21,7 @@ const KIND_TO_BODY_KEY: Record<DetectedKind, TranslationKey> = {
   'pdf-multi': 'unsupported.unknown',  // routed to BatchConversionModal in App
   'pdf-raster': 'unsupported.pdf-raster',
   'image': 'unsupported.image',
-  'xml-ecg': 'unsupported.xml-ecg',
-  'xml-other': 'unsupported.xml-other',
+  'xml': 'unsupported.xml',
   'dicom': 'unsupported.dicom',
   'unknown': 'unsupported.unknown',
 };

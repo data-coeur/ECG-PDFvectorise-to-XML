@@ -1,3 +1,0 @@
-[submodule "ecg_converter"]
-	path = ecg_converter
-	url = https://github.com/LIRYC-IHU/ecg_converter.git

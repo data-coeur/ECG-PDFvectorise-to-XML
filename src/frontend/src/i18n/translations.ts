@@ -156,8 +156,7 @@ const translations = {
     'unsupported.accepted': 'Formats actuellement acceptés : PDF vectoriel issu d\'un appareil ECG (GE MUSE, Schiller, Mortara/Burdick…).',
     'unsupported.pdf-raster': 'Ce fichier est un PDF, mais il s\'agit d\'un PDF image (scan ou export bitmap), pas d\'un PDF vectoriel. Capture ECG a besoin du tracé sous forme de chemins vectoriels pour reconstruire le signal.',
     'unsupported.image': 'La conversion à partir d\'images (JPEG, PNG, etc.) est encore en cours de développement.',
-    'unsupported.xml-ecg': 'La conversion à partir de données sources XML est encore en cours de développement.',
-    'unsupported.xml-other': 'Ce fichier XML n\'a pas été reconnu comme un ECG.',
+    'unsupported.xml': 'Les fichiers XML ne sont pas pris en charge. Capture ECG n\'accepte que les PDF vectoriels.',
     'unsupported.dicom': 'La conversion à partir de DICOM Waveform est encore en cours de développement.',
     'unsupported.unknown': 'Ce type de fichier n\'est pas pris en charge.',
 
@@ -322,8 +321,7 @@ const translations = {
     'unsupported.accepted': 'Currently accepted formats: vectorized PDF from an ECG device (GE MUSE, Schiller, Mortara/Burdick…).',
     'unsupported.pdf-raster': 'This file is a PDF, but it is a raster PDF (scan or bitmap export), not a vectorized one. Capture ECG needs the trace as vector paths to reconstruct the signal.',
     'unsupported.image': 'Conversion from images (JPEG, PNG, etc.) is still under development.',
-    'unsupported.xml-ecg': 'Conversion from source XML data is still under development.',
-    'unsupported.xml-other': 'This XML file was not recognized as an ECG.',
+    'unsupported.xml': 'XML files are not supported. Capture ECG only accepts vectorized PDFs.',
     'unsupported.dicom': 'Conversion from DICOM Waveform is still under development.',
     'unsupported.unknown': 'This file type is not supported.',
 

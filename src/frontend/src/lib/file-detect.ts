@@ -1,6 +1,7 @@
 // file-detect — classifie un fichier déposé en pdf-vector / pdf-raster /
-// image / xml-ecg / dicom / unknown via magic bytes + DOMParser pour XML +
-// inspection pdfjs pour PDF (compte les ops vectorielles).
+// image / xml / dicom / unknown via magic bytes + inspection pdfjs pour PDF
+// (compte les ops vectorielles). Le XML est seulement *détecté* (pas parsé)
+// pour afficher un message d'erreur dédié — seul le PDF vectoriel est accepté.
 // In  : un File. Out : { kind: DetectedKind, detail?: string }.
 // Appelé par App.tsx::processQueue avant l'extraction pour router vers le
 // bon flow ou afficher UnsupportedFileModal.
@@ -12,8 +13,7 @@ export type DetectedKind =
   | 'pdf-raster'
   | 'pdf-multi'
   | 'image'
-  | 'xml-ecg'
-  | 'xml-other'
+  | 'xml'
   | 'dicom'
   | 'unknown';
 
@@ -24,7 +24,6 @@ export interface Detected {
 }
 
 const HEAD_SIZE = 4096;
-const XML_HEAD_SIZE = 16384;
 
 function bytesEqual(head: Uint8Array, sig: readonly number[], offset = 0): boolean {
   if (head.length < offset + sig.length) return false;
@@ -47,20 +46,6 @@ const SIG = {
   WEBP: [0x57, 0x45, 0x42, 0x50],
   DICM: [0x44, 0x49, 0x43, 0x4D], // DICM at offset 128
 } as const;
-
-// Root XML elements that map to known ECG formats
-const ECG_XML_ROOTS = new Set([
-  'restingecg',     // GE MUSE
-  'annotatedecg',   // HL7 aECG
-  'restingecgdata', // Philips
-  'cardiologyxml',  // generic Cardiology XML
-  'aecg',           // various v3 messages
-  'sapphire',       // Mortara/Burdick
-]);
-
-// Tags whose mere presence strongly suggests ECG content even if the root
-// element is unknown (vendor-specific wrappers, COR documents, etc.)
-const ECG_HINT_TAGS = ['Waveform', 'WaveformData', 'ECGSignals', 'RhythmStrip', 'LeadData'];
 
 function decodeText(head: Uint8Array, maxBytes: number): string {
   // strip UTF-8 BOM if present
@@ -120,47 +105,6 @@ async function inspectPdf(file: File): Promise<Detected> {
   }
 }
 
-async function classifyXml(file: File): Promise<Detected> {
-  const buf = await file.slice(0, XML_HEAD_SIZE).arrayBuffer();
-  const text = decodeText(new Uint8Array(buf), XML_HEAD_SIZE);
-
-  // The head may be truncated mid-element. DOMParser tolerates this — root info
-  // is in the first few hundred bytes, so it almost always parses cleanly enough
-  // to expose the root element. parsererror only fires on grossly invalid XML.
-  let root: Element | null = null;
-  try {
-    const doc = new DOMParser().parseFromString(text, 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length === 0) {
-      root = doc.documentElement;
-    }
-  } catch {
-    /* fall through */
-  }
-
-  // If DOMParser couldn't give us a root, try to fish the first opening tag
-  // out of the raw text — handles truncated heads where the closing tag is missing.
-  if (!root) {
-    const m = text.match(/<\s*([A-Za-z_][\w.-]*)/);
-    if (m) {
-      const name = m[1];
-      if (ECG_XML_ROOTS.has(name.toLowerCase())) return { kind: 'xml-ecg', detail: name };
-      return { kind: 'xml-other', detail: name };
-    }
-    return { kind: 'xml-other' };
-  }
-
-  const rootName = root.localName;
-  if (ECG_XML_ROOTS.has(rootName.toLowerCase())) {
-    return { kind: 'xml-ecg', detail: rootName };
-  }
-  for (const tag of ECG_HINT_TAGS) {
-    if (root.getElementsByTagName(tag).length > 0) {
-      return { kind: 'xml-ecg', detail: rootName };
-    }
-  }
-  return { kind: 'xml-other', detail: rootName };
-}
-
 export async function detectFileType(file: File): Promise<Detected> {
   const head = new Uint8Array(await file.slice(0, HEAD_SIZE).arrayBuffer());
 
@@ -183,9 +127,11 @@ export async function detectFileType(file: File): Promise<Detected> {
   }
 
   // ── Text-based: XML ───────────────────────────────────────────────────────
+  // Detected (not parsed) so the UI can show a dedicated "XML not supported"
+  // message — only vectorized PDF is accepted as input.
   const headText = decodeText(head, 1024);
   if (looksLikeXml(headText)) {
-    return classifyXml(file);
+    return { kind: 'xml' };
   }
 
   return { kind: 'unknown' };
