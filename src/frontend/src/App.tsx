@@ -217,7 +217,7 @@ export default function App() {
     <div className="min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/30 bg-white/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="flex items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
             <img src={logoSrc} alt="Cardio Capture" className="h-9 w-auto" />
             <div>
@@ -244,7 +244,7 @@ export default function App() {
       </header>
 
       {/* Main */}
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className="px-6 py-6">
         <StepIndicator current={currentStep} completed={completedSteps} />
 
         <div className="glass-card p-5 mt-2">
