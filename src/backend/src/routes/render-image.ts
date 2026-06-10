@@ -21,8 +21,12 @@ export const renderImageRouter = Router();
 
 renderImageRouter.post('/render-image', async (req, res) => {
   const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  // ?output_format=pdf → true vector PDF (same layout); default WebP raster.
+  // The Python script derives the output format from the file extension.
+  const isPdf = (req.query.output_format as string) === 'pdf';
+  const outExt = isPdf ? 'pdf' : 'webp';
   const xmlPath = path.join(DATA_DIR, `_render_${uid}.xml`);
-  const imgPath = path.join(DATA_DIR, `_render_${uid}.webp`);
+  const imgPath = path.join(DATA_DIR, `_render_${uid}.${outExt}`);
   try {
     const data = req.body;
     if (!data?.channels?.length) return res.status(400).json({ error: 'No channels' });
@@ -59,7 +63,7 @@ renderImageRouter.post('/render-image', async (req, res) => {
     }
 
     const buf = fs.readFileSync(imgPath);
-    res.set('Content-Type', 'image/webp');
+    res.set('Content-Type', isPdf ? 'application/pdf' : 'image/webp');
     res.set('Cache-Control', 'no-store');
     res.send(buf);
   } catch (error) {

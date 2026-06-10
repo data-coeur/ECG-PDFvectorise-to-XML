@@ -16,7 +16,7 @@ from ecg_generator.layout.manager import (
     apply_lead_order, apply_lead_nomenclatures, create_inverse_mapping
 )
 from ecg_generator.layout.renderer import render_ecg_layout
-from ecg_generator.layout.figure_utils import _render_deferred_texts
+from ecg_generator.layout.figure_utils import _render_deferred_texts, _render_deferred_texts_mpl
 
 from ecgmind_raw2paper.config import build_standard_config, resolve_logo_path, DEFAULT_LOGO
 from ecgmind_raw2paper.sizing import compute_canvas_layout
@@ -159,6 +159,64 @@ def _paste_logo(pil_img, logo):
     pil_img.alpha_composite(logo, (x, y))
 
 
+def _mpl_color(c):
+    """Normalize a color to a matplotlib value (0-255 tuple -> 0-1; else passthrough)."""
+    if isinstance(c, (tuple, list)):
+        return tuple(v / 255 if v > 1 else v for v in c[:3])
+    return c
+
+
+def _save_vector_pdf(fig, ax, coord_data, canvas, config, logo_path, output_path,
+                     has_text, has_logo):
+    """Render the ECG to a TRUE vector PDF (grid + traces + labels all vector).
+
+    The figure already holds the grid and signal traces as vector matplotlib
+    artists. Here we add the deferred lead labels, the bottom annotation strip and
+    the logo IN matplotlib (instead of the PIL raster post-pass), then savefig to
+    PDF. Data space == pixel space (origin bottom-left). The logo is embedded as a
+    small raster image — fine inside an otherwise-vector page.
+    """
+    W = canvas.canvas_width_px
+
+    # Lead labels — vector text.
+    if coord_data.deferred_texts:
+        _render_deferred_texts_mpl(ax, coord_data.deferred_texts, DPI)
+
+    txt_color = _mpl_color(config.get("bottom_text_color", (0, 0, 0)))
+    fontsize_pt = BOTTOM_LEFT_FONT_SIZE_PX * 72.0 / DPI
+    baseline_y = STRIP_BOTTOM_INSET_PX + BOTTOM_TEXT_PAD_Y_PX  # from page bottom
+
+    # Logo — embedded raster, bottom-right. imshow can rescale the axes, so snapshot
+    # and restore the limits around it.
+    logo_left_x = W - STRIP_HORIZONTAL_INSET_PX
+    if has_logo:
+        try:
+            xlim, ylim = ax.get_xlim(), ax.get_ylim()
+            logo = _resize_logo(logo_path)
+            x1 = W - STRIP_HORIZONTAL_INSET_PX
+            x0 = x1 - logo.width
+            y0 = STRIP_BOTTOM_INSET_PX
+            ax.imshow(np.asarray(logo), extent=[x0, x1, y0, y0 + logo.height],
+                      origin='upper', aspect='auto', zorder=10,
+                      interpolation='antialiased')
+            ax.set_xlim(xlim); ax.set_ylim(ylim)
+            logo_left_x = x0 - RIGHT_TEXT_TO_LOGO_GAP_PX
+        except Exception:
+            pass
+
+    if has_text and BOTTOM_LEFT_TEXT:
+        ax.text(STRIP_HORIZONTAL_INSET_PX, baseline_y, BOTTOM_LEFT_TEXT,
+                fontsize=fontsize_pt, color=txt_color, ha='left', va='bottom',
+                clip_on=False, zorder=5)
+    if BOTTOM_RIGHT_TEXT:
+        ax.text(logo_left_x, baseline_y, BOTTOM_RIGHT_TEXT,
+                fontsize=fontsize_pt, color=txt_color, ha='right', va='bottom',
+                clip_on=False, zorder=5)
+
+    fig.savefig(output_path, dpi=DPI, pad_inches=0)
+    plt.close(fig)
+
+
 def generate_ecg_image(input_path, output_path, output_format="webp", theme="turquoise",
                        logo=DEFAULT_LOGO, format_override=None):
     """
@@ -248,6 +306,13 @@ def generate_ecg_image(input_path, output_path, output_format="webp", theme="tur
     )
 
     # 6. Save.
+    if output_format == "pdf":
+        # True vector PDF: draw labels/strip/logo in matplotlib (no PIL post-pass).
+        _save_vector_pdf(fig, _ax, coord_data, canvas, config, logo_path, output_path,
+                         has_text=has_text, has_logo=has_logo)
+        print(f"[OK] ECG vector PDF saved to {output_path}")
+        return output_path
+
     save_kwargs = dict(dpi=DPI, pad_inches=0)
     if output_format == "webp":
         save_kwargs["pil_kwargs"] = {"lossless": True}

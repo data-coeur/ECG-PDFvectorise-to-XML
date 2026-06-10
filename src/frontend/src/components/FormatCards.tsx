@@ -55,12 +55,27 @@ interface Props {
   pdfFile?: File | null;
   /** All PDF files from batch — for batch PDF download */
   allPdfFiles?: File[];
+  /** Current render selection (layout target + backend code) from ECGImageView,
+   *  so the Image card renders WebP/PDF at the layout shown in the preview. */
+  imageSel?: { target: number; fmt: string } | null;
 }
 
 interface DownloadLink { href: string; name: string }
 
-async function convertOne(fmt: FmtDef, data: ECGData, idx: number): Promise<DownloadLink> {
-  const r = await fetch(API_BASE + fmt.apiPath, {
+/** Extra render parameters for the image endpoint (layout + output format). */
+interface RenderOpts { target: number; fmt: string; outputFormat: 'webp' | 'pdf' }
+
+async function convertOne(fmt: FmtDef, data: ECGData, idx: number, render?: RenderOpts): Promise<DownloadLink> {
+  let url = API_BASE + fmt.apiPath;
+  if (render) {
+    const qs = new URLSearchParams({
+      target: String(render.target),
+      format: render.fmt,
+      output_format: render.outputFormat,
+    });
+    url += `?${qs.toString()}`;
+  }
+  const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -72,7 +87,8 @@ async function convertOne(fmt: FmtDef, data: ECGData, idx: number): Promise<Down
   if (fmt.kind === 'binary-image') {
     const blob = await r.blob();
     const href = URL.createObjectURL(blob);
-    return { href, name: `ecg_${idx + 1}.${fmt.ext}` };
+    const ext = render?.outputFormat ?? fmt.ext;
+    return { href, name: `ecg_${idx + 1}.${ext}` };
   }
   const j: ServerResponse = await r.json();
   if (!j.success || !j.files) throw new Error(j.error || 'Server error');
@@ -89,7 +105,7 @@ function triggerDownload(link: DownloadLink) {
   document.body.removeChild(a);
 }
 
-export default function FormatCards({ ecgData, disabled, onConvertStart, onConvertDone, allEcgData, pdfFile, allPdfFiles }: Props) {
+export default function FormatCards({ ecgData, disabled, onConvertStart, onConvertDone, allEcgData, pdfFile, allPdfFiles, imageSel }: Props) {
   const { t } = useLanguage();
   const [states, setStates] = useState<Record<string, CardState>>({});
   const [downloads, setDownloads] = useState<Record<string, DownloadLink>>({});
@@ -97,8 +113,30 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
   const [showWip, setShowWip] = useState(false);
   const [batchPrompt, setBatchPrompt] = useState<FmtDef | null>(null);
   const [showPdfBatchChoice, setShowPdfBatchChoice] = useState(false);
+  // In-flight output format for the Image card (WebP / PDF), null when idle.
+  const [imgFmt, setImgFmt] = useState<null | 'webp' | 'pdf'>(null);
 
   const hasBatch = (allEcgData?.length ?? 0) > 1;
+
+  // Image card: render WebP or vector PDF at the currently selected layout, then
+  // download. Same raw2paper render — only the output format differs.
+  const handleImageDownload = useCallback(async (of: 'webp' | 'pdf') => {
+    const fmt = FORMATS.find(f => f.key === 'image')!;
+    setImgFmt(of);
+    onConvertStart?.();
+    try {
+      const render: RenderOpts | undefined = imageSel
+        ? { target: imageSel.target, fmt: imageSel.fmt, outputFormat: of }
+        : undefined;
+      const link = await convertOne(fmt, ecgData, 0, render);
+      triggerDownload(link);
+      onConvertDone?.();
+    } catch (e) {
+      console.error('[image]', of, e);
+    } finally {
+      setImgFmt(null);
+    }
+  }, [ecgData, imageSel, onConvertStart, onConvertDone]);
 
   // Always anonymized — both the PDF content AND the filename (the original name
   // can carry patient identity, e.g. "LASTNAME_FIRSTNAME_…pdf").
@@ -254,7 +292,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                     ↓ {t('fmt.download')}
                   </button>
                 )}
-                {!isWip && state === 'idle' && fmt.key !== 'pdfvec' && (
+                {!isWip && state === 'idle' && fmt.key !== 'pdfvec' && fmt.key !== 'image' && (
                   <button
                     onClick={() => handleConvert(fmt)}
                     disabled={disabled}
@@ -262,6 +300,23 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                   >
                     ↓ {t('fmt.download')}
                   </button>
+                )}
+                {/* Image card: WebP or vector PDF (same render, selected layout). */}
+                {!isWip && fmt.key === 'image' && (
+                  <div className="flex gap-1.5">
+                    {(['webp', 'pdf'] as const).map(of => (
+                      <button
+                        key={of}
+                        onClick={() => handleImageDownload(of)}
+                        disabled={disabled || imgFmt !== null}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {imgFmt === of
+                          ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
+                          : <>↓ {of === 'webp' ? 'WebP' : 'PDF'}</>}
+                      </button>
+                    ))}
+                  </div>
                 )}
                 {!isWip && state === 'loading' && (
                   <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">

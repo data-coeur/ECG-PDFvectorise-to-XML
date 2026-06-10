@@ -80,6 +80,9 @@ export default function App() {
   const [showReport, setShowReport] = useState(false);
   const [showBatch, setShowBatch] = useState(false);
   const [unsupported, setUnsupported] = useState<Detected | null>(null);
+  // Current render selection (layout target + backend code) published by
+  // ECGImageView, reused by the Image card to download WebP/PDF at that layout.
+  const [imageSel, setImageSel] = useState<{ target: number; fmt: string } | null>(null);
 
   // ── Batch helpers ────────────────────────────────────────────────────────
   const updateItem = useCallback((id: string, patch: Partial<BatchItem>) => {
@@ -289,10 +292,11 @@ export default function App() {
                 allEcgData={batch.filter(i => i.status === 'done' && i.ecgData).map(i => i.ecgData!)}
                 pdfFile={pdfFile}
                 allPdfFiles={batch.filter(i => i.status === 'done').map(i => i.file)}
+                imageSel={imageSel}
               />
             </div>
             <div className="mt-5 glass-card p-5">
-              <ECGImageView data={ecgData} cacheKey={activeId} pdfFile={pdfFile} />
+              <ECGImageView data={ecgData} cacheKey={activeId} pdfFile={pdfFile} onSelectionChange={setImageSel} />
             </div>
           </>
         )}

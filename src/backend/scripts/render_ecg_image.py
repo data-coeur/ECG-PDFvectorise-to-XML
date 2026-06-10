@@ -35,7 +35,9 @@ def main():
 
     try:
         from ecgmind_raw2paper.pipeline import generate_ecg_image
-        generate_ecg_image(xml_path, out_path, output_format="webp", format_override=fmt)
+        # Output format is derived from the destination extension (.pdf → vector PDF).
+        out_fmt = "pdf" if out_path.lower().endswith(".pdf") else "webp"
+        generate_ecg_image(xml_path, out_path, output_format=out_fmt, format_override=fmt)
     except Exception as e:
         import traceback
         print(f"ERROR: {e}", file=sys.stderr)

@@ -120,6 +120,27 @@ def _render_deferred_texts(pil_img, deferred_texts, render_w, render_h):
         draw.text((x_img, y_img), item['text'], fill=color, font=font)
 
 
+def _render_deferred_texts_mpl(ax, deferred_texts, dpi=DPI):
+    """Draw the deferred text items as VECTOR matplotlib text (for PDF output).
+
+    Mirrors `_render_deferred_texts` but uses ``ax.text`` in data space (which
+    equals pixel space here, origin bottom-left) instead of rasterizing with PIL,
+    so labels stay vector/selectable in the saved PDF. Coordinates, alignment and
+    size come straight from the same `deferred_texts` items used by the PIL pass.
+    """
+    for item in deferred_texts:
+        c = item['color']
+        color = tuple(v / 255 for v in c[:3]) if isinstance(c, (tuple, list)) else c
+        ax.text(
+            item['x'], item['y'], item['text'],
+            fontsize=item['size_px'] * 72.0 / dpi,
+            color=color,
+            ha=item['ha'], va=item['va'],
+            fontweight='bold' if item.get('bold') else 'normal',
+            fontstyle='italic' if item.get('italic') else 'normal',
+            clip_on=False, zorder=5,
+        )
+
 
 class CoordinateData:
     """Collects text items to be rendered by PIL after the matplotlib save.

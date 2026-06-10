@@ -16,6 +16,9 @@ interface Props {
   data: ECGData;
   cacheKey?: string;
   pdfFile?: File | null;
+  /** Publishes the current render selection (target seconds + backend layout code)
+   *  so the Image output card can download WebP/PDF at the same layout. */
+  onSelectionChange?: (sel: { target: number; fmt: string }) => void;
 }
 
 // Backend format codes — must match Python LAYOUT_TEMPLATES keys
@@ -160,7 +163,7 @@ export function preloadImage(cacheKey: string, data: ECGData) {
 }
 
 // ── Component ───────────────────────────────────────────────────────────
-export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
+export default function ECGImageView({ data, cacheKey, pdfFile, onSelectionChange }: Props) {
   const { t, lang } = useLanguage();
 
   const sourceDuration = data.channels[0]?.duration_s ?? 0;
@@ -242,6 +245,11 @@ export default function ECGImageView({ data, cacheKey, pdfFile }: Props) {
   const target = targetForLayout(selectedLayout, sourceDuration);
   const fmt = toBackend(selectedLayout);
   const isTruncated = target < sourceDuration - 1e-3;
+
+  // Publish the current selection so the Image card downloads at the same layout.
+  useEffect(() => {
+    onSelectionChange?.({ target, fmt });
+  }, [target, fmt, onSelectionChange]);
 
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
