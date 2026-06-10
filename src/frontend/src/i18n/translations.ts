@@ -8,7 +8,7 @@ const translations = {
   fr: {
     // Header
     'app.title': 'Cardio Capture',
-    'app.subtitle': 'De vos ECG (données sources, PDF vectoriel ou image) vers des formats numériques standards',
+    'app.subtitle': 'De vos ECG en PDF vectoriel vers des formats numériques standards',
 
     // Steps
     'step.upload': 'Upload',
@@ -118,9 +118,9 @@ const translations = {
 
     // Info card
     'info.principle.title': 'Principe',
-    'info.principle.text': 'Capture ECG convertit vos ECG en formats numériques standards, utilisables en clinique comme en recherche. Aujourd\'hui l\'outil prend en charge les PDF vectoriels ; d\'autres types d\'entrée et de sortie viendront s\'y ajouter. Les données patient ne quittent jamais votre poste — seul le signal numérique est transmis au serveur le temps de la conversion.',
+    'info.principle.text': 'Capture ECG convertit vos ECG en formats numériques standards, utilisables en clinique comme en recherche. L\'outil prend en charge les PDF vectoriels issus des appareils ECG. Les données patient ne quittent jamais votre poste — seul le signal numérique est transmis au serveur le temps de la conversion.',
     'info.upload.title': 'Upload',
-    'info.upload.text': 'Déposez un ECG. Pour l\'instant, les fichiers acceptés sont les PDF vectoriels issus des principaux constructeurs (GE MUSE, Schiller, Mortara/Burdick…). La prise en charge des données sources (XML propriétaires) et des images est en cours de développement.',
+    'info.upload.text': 'Déposez un ECG. Les fichiers acceptés sont les PDF vectoriels issus des principaux constructeurs (GE MUSE, Schiller, Mortara/Burdick…).',
     'info.extract.title': 'Extraction',
     'info.extract.text': 'Le signal est extrait localement par votre navigateur. Les valeurs numériques sont ensuite transmises au serveur, qui les convertit au format XML standard et les renvoie pour affichage.',
     'info.convert.title': 'Conversion',
@@ -173,7 +173,7 @@ const translations = {
   en: {
     // Header
     'app.title': 'Cardio Capture',
-    'app.subtitle': 'From your ECGs (source data, vectorized PDF or image) to standard digital formats',
+    'app.subtitle': 'From your vectorized PDF ECGs to standard digital formats',
 
     // Steps
     'step.upload': 'Upload',
@@ -283,9 +283,9 @@ const translations = {
 
     // Info card
     'info.principle.title': 'Principle',
-    'info.principle.text': 'Capture ECG converts your ECGs into standard digital formats, usable in clinical practice and research. Today the tool handles vectorized PDFs; more input and output types will follow. Patient data never leaves your machine — only the digital signal is transmitted to the server, and only for the time the conversion takes.',
+    'info.principle.text': 'Capture ECG converts your ECGs into standard digital formats, usable in clinical practice and research. The tool accepts vectorized PDFs from ECG devices. Patient data never leaves your machine — only the digital signal is transmitted to the server, and only for the time the conversion takes.',
     'info.upload.title': 'Upload',
-    'info.upload.text': 'Drop an ECG. For now, accepted files are vectorized PDFs from major manufacturers (GE MUSE, Schiller, Mortara/Burdick…). Support for source data (proprietary XML) and images is under development.',
+    'info.upload.text': 'Drop an ECG. Accepted files are vectorized PDFs from major manufacturers (GE MUSE, Schiller, Mortara/Burdick…).',
     'info.extract.title': 'Extraction',
     'info.extract.text': 'The signal is extracted locally by your browser. The numeric values are then sent to the server, which converts them to the standard XML format and sends them back for display.',
     'info.convert.title': 'Conversion',
