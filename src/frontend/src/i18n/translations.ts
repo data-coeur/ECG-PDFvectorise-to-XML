@@ -84,6 +84,11 @@ const translations = {
     'fmt.batch.files': 'Télécharger fichier par fichier',
     'fmt.batch.filesDesc': 'Chaque fichier est téléchargé séparément.',
     'fmt.download': 'Télécharger',
+    'fmt.img.title': 'Télécharger le tracé rendu',
+    'fmt.img.webp': 'Image (WebP)',
+    'fmt.img.webpDesc': 'Image matricielle du tracé ECG.',
+    'fmt.img.pdf': 'PDF vectoriel',
+    'fmt.img.pdfDesc': 'PDF vectoriel scalable, même mise en page que l\'image.',
     'fmt.error': 'Erreur',
 
     // Downloads
@@ -249,6 +254,11 @@ const translations = {
     'fmt.batch.files': 'Download file by file',
     'fmt.batch.filesDesc': 'Each file is downloaded separately.',
     'fmt.download': 'Download',
+    'fmt.img.title': 'Download the rendered trace',
+    'fmt.img.webp': 'Image (WebP)',
+    'fmt.img.webpDesc': 'Raster image of the ECG trace.',
+    'fmt.img.pdf': 'Vector PDF',
+    'fmt.img.pdfDesc': 'Scalable vector PDF, same layout as the image.',
     'fmt.error': 'Error',
 
     // Downloads

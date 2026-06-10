@@ -113,15 +113,18 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
   const [showWip, setShowWip] = useState(false);
   const [batchPrompt, setBatchPrompt] = useState<FmtDef | null>(null);
   const [showPdfBatchChoice, setShowPdfBatchChoice] = useState(false);
+  const [showImageChoice, setShowImageChoice] = useState(false);
   // In-flight output format for the Image card (WebP / PDF), null when idle.
   const [imgFmt, setImgFmt] = useState<null | 'webp' | 'pdf'>(null);
 
   const hasBatch = (allEcgData?.length ?? 0) > 1;
 
   // Image card: render WebP or vector PDF at the currently selected layout, then
-  // download. Same raw2paper render — only the output format differs.
+  // download. Same raw2paper render — only the output format differs. The filename
+  // is anonymized (the render is built from the signal, no patient identity).
   const handleImageDownload = useCallback(async (of: 'webp' | 'pdf') => {
     const fmt = FORMATS.find(f => f.key === 'image')!;
+    setShowImageChoice(false);
     setImgFmt(of);
     onConvertStart?.();
     try {
@@ -129,7 +132,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
         ? { target: imageSel.target, fmt: imageSel.fmt, outputFormat: of }
         : undefined;
       const link = await convertOne(fmt, ecgData, 0, render);
-      triggerDownload(link);
+      triggerDownload({ href: link.href, name: `ecg_anonymise.${of}` });
       onConvertDone?.();
     } catch (e) {
       console.error('[image]', of, e);
@@ -301,22 +304,23 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                     ↓ {t('fmt.download')}
                   </button>
                 )}
-                {/* Image card: WebP or vector PDF (same render, selected layout). */}
+                {/* Image card: one button → popup to pick WebP or vector PDF
+                    (same render, selected layout). */}
                 {!isWip && fmt.key === 'image' && (
-                  <div className="flex gap-1.5">
-                    {(['webp', 'pdf'] as const).map(of => (
-                      <button
-                        key={of}
-                        onClick={() => handleImageDownload(of)}
-                        disabled={disabled || imgFmt !== null}
-                        className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {imgFmt === of
-                          ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
-                          : <>↓ {of === 'webp' ? 'WebP' : 'PDF'}</>}
-                      </button>
-                    ))}
-                  </div>
+                  imgFmt !== null ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
+                      {t('fmt.converting')}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setShowImageChoice(true)}
+                      disabled={disabled}
+                      className="rounded-lg bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ↓ {t('fmt.download')}
+                    </button>
+                  )
                 )}
                 {!isWip && state === 'loading' && (
                   <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
@@ -436,6 +440,49 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => setShowPdfBatchChoice(false)}
+                className="rounded-lg bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-300"
+              >
+                {t('unsupported.close' as TranslationKey)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Image download choice popup: WebP raster or vector PDF (same render) */}
+      {showImageChoice && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-md"
+          onClick={() => setShowImageChoice(false)}
+        >
+          <div className="glass-card w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="mb-3 text-sm font-semibold text-slate-700">{t('fmt.img.title' as TranslationKey)}</h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleImageDownload('webp')}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm">🖼️</span>
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">{t('fmt.img.webp' as TranslationKey)}</div>
+                  <div className="text-[10px] text-slate-400">{t('fmt.img.webpDesc' as TranslationKey)}</div>
+                </div>
+              </button>
+              <button
+                onClick={() => handleImageDownload('pdf')}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm">📄</span>
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">{t('fmt.img.pdf' as TranslationKey)}</div>
+                  <div className="text-[10px] text-slate-400">{t('fmt.img.pdfDesc' as TranslationKey)}</div>
+                </div>
+              </button>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowImageChoice(false)}
                 className="rounded-lg bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-300"
               >
                 {t('unsupported.close' as TranslationKey)}
