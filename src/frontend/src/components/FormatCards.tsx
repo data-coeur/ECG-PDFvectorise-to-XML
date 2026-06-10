@@ -127,6 +127,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
     onConvertStart?.();
     try {
       const link = await convertOne(fmt, ecgData, 0);
+      triggerDownload(link);
       setDownloads(s => ({ ...s, [fmt.key]: link }));
       setStates(s => ({ ...s, [fmt.key]: 'done' }));
       onConvertDone?.();
@@ -250,7 +251,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                     disabled={disabled}
                     className="rounded-lg bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    ↗ {t('fmt.convert')}
+                    ↓ {t('fmt.download')}
                   </button>
                 )}
                 {!isWip && state === 'idle' && fmt.key !== 'pdfvec' && (
@@ -259,7 +260,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                     disabled={disabled}
                     className="rounded-lg bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    ↗ {t('fmt.convert')}
+                    ↓ {t('fmt.download')}
                   </button>
                 )}
                 {!isWip && state === 'loading' && (
