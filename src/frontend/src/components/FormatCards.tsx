@@ -105,14 +105,25 @@ function triggerDownload(link: DownloadLink) {
   document.body.removeChild(a);
 }
 
+const srcBaseOf = (name: string) => (name || 'ecg').replace(/\.[^./\\]+$/, '') || 'ecg';
+
+/** CSV mapping anonymized filename → original filename (UTF-8 BOM for Excel). */
+function buildCorrespondenceCsv(rows: { anon: string; original: string }[]): string {
+  const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = ['nom_anonymise,nom_original', ...rows.map(r => `${esc(r.anon)},${esc(r.original)}`)];
+  return '﻿' + lines.join('\r\n');
+}
+
 export default function FormatCards({ ecgData, disabled, onConvertStart, onConvertDone, allEcgData, pdfFile, allPdfFiles, imageSel }: Props) {
   const { t } = useLanguage();
   const [states, setStates] = useState<Record<string, CardState>>({});
   const [downloads, setDownloads] = useState<Record<string, DownloadLink>>({});
   const [batchStates, setBatchStates] = useState<Record<string, { done: number; total: number; running: boolean }>>({});
   const [showWip, setShowWip] = useState(false);
-  const [batchPrompt, setBatchPrompt] = useState<FmtDef | null>(null);
-  const [showPdfBatchChoice, setShowPdfBatchChoice] = useState(false);
+  // Unified batch popup: which card triggered it (null = closed).
+  const [batchCard, setBatchCard] = useState<FmtDef | null>(null);
+  // Include a correspondence table (anonymized ↔ real filename) in the batch export.
+  const [includeTable, setIncludeTable] = useState(false);
   const [showImageChoice, setShowImageChoice] = useState(false);
   const [showXmlChoice, setShowXmlChoice] = useState(false);
   // Whether the download filename is anonymized (content is already anonymous);
@@ -189,75 +200,63 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
     }
   }, [ecgData, onConvertStart, onConvertDone, dlName]);
 
-  const handleConvertAll = useCallback(async (fmt: FmtDef, mode: 'files' | 'zip') => {
-    if (!allEcgData || allEcgData.length <= 1) return;
-    const total = allEcgData.length;
+  // Unified batch export for any card (PDF anonymized / HL7 XML / Image). Builds
+  // each file (anonymized PDF client-side, or server-converted XML/image), names
+  // it anonymized (ecg_anonymise_<n>) or after its source file, and optionally
+  // adds a correspondence.csv mapping anonymized ↔ real names. ZIP bundles
+  // everything; "files" triggers each download (+ the CSV) separately.
+  const runBatch = useCallback(async (
+    fmt: FmtDef, mode: 'files' | 'zip', anon: boolean, withTable: boolean,
+  ) => {
+    const isPdf = fmt.key === 'pdfvec';
+    const sources = isPdf ? allPdfFiles : allEcgData;
+    if (!sources || sources.length <= 1) return;
+    const total = sources.length;
     setBatchStates(s => ({ ...s, [fmt.key]: { done: 0, total, running: true } }));
 
-    if (mode === 'files') {
-      for (let i = 0; i < total; i++) {
-        try {
-          const link = await convertOne(fmt, allEcgData[i], i);
-          triggerDownload(link);
-          setBatchStates(s => ({ ...s, [fmt.key]: { ...s[fmt.key], done: i + 1 } }));
-        } catch (e) {
-          console.error(`[convert-all] ${fmt.key} item ${i}:`, e);
+    const zip = mode === 'zip' ? new JSZip() : null;
+    const rows: { anon: string; original: string }[] = [];
+
+    for (let i = 0; i < total; i++) {
+      try {
+        let blob: Blob;
+        let originalName: string;
+        if (isPdf) {
+          const f = allPdfFiles![i];
+          originalName = f.name;
+          const buf = await f.arrayBuffer();
+          const anonBytes = await anonymizePdf(buf.slice(0), 'smart');
+          const ab = new ArrayBuffer(anonBytes.byteLength);
+          new Uint8Array(ab).set(anonBytes);
+          blob = new Blob([ab], { type: 'application/pdf' });
+        } else {
+          const d = allEcgData![i];
+          originalName = d.filename || `ecg_${i + 1}`;
+          const link = await convertOne(fmt, d, i);
+          blob = await (await fetch(link.href)).blob();
         }
+        const name = anon ? `ecg_anonymise_${i + 1}.${fmt.ext}` : `${srcBaseOf(originalName)}.${fmt.ext}`;
+        rows.push({ anon: name, original: originalName });
+        if (zip) zip.file(name, blob);
+        else triggerDownload({ href: URL.createObjectURL(blob), name });
+        setBatchStates(s => ({ ...s, [fmt.key]: { ...s[fmt.key], done: i + 1 } }));
+      } catch (e) {
+        console.error(`[batch] ${fmt.key} item ${i}:`, e);
       }
-    } else {
-      const zip = new JSZip();
-      for (let i = 0; i < total; i++) {
-        try {
-          const link = await convertOne(fmt, allEcgData[i], i);
-          const resp = await fetch(link.href);
-          const blob = await resp.blob();
-          zip.file(link.name, blob);
-          setBatchStates(s => ({ ...s, [fmt.key]: { ...s[fmt.key], done: i + 1 } }));
-        } catch (e) {
-          console.error(`[convert-all] ${fmt.key} item ${i}:`, e);
-        }
-      }
+    }
+
+    if (withTable && rows.length) {
+      const csv = buildCorrespondenceCsv(rows);
+      if (zip) zip.file('correspondance.csv', csv);
+      else triggerDownload({ href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), name: 'correspondance.csv' });
+    }
+    if (zip) {
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       triggerDownload({ href: URL.createObjectURL(zipBlob), name: `ecg_${fmt.key}_${total}.zip` });
     }
 
     setBatchStates(s => ({ ...s, [fmt.key]: { ...s[fmt.key], running: false } }));
-  }, [allEcgData]);
-
-  // Batch PDF download — anonymized only (content + filename), client-side.
-  const handleConvertAllPdf = useCallback(async (dlMode: 'files' | 'zip') => {
-    if (!allPdfFiles || allPdfFiles.length <= 1) return;
-    const total = allPdfFiles.length;
-    setBatchStates(s => ({ ...s, pdfvec: { done: 0, total, running: true } }));
-
-    const zip = dlMode === 'zip' ? new JSZip() : null;
-
-    for (let i = 0; i < total; i++) {
-      try {
-        const buf = await allPdfFiles[i].arrayBuffer();
-        const anonBytes = await anonymizePdf(buf.slice(0), 'smart');
-        const anonBuf = new ArrayBuffer(anonBytes.byteLength);
-        new Uint8Array(anonBuf).set(anonBytes);
-        const blob = new Blob([anonBuf], { type: 'application/pdf' });
-        const name = `ecg_anonymise_${i + 1}.pdf`;
-        if (zip) {
-          zip.file(name, blob);
-        } else {
-          triggerDownload({ href: URL.createObjectURL(blob), name });
-        }
-        setBatchStates(s => ({ ...s, pdfvec: { ...s.pdfvec, done: i + 1 } }));
-      } catch (e) {
-        console.error(`[convert-all-pdf] item ${i}:`, e);
-      }
-    }
-
-    if (zip) {
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      triggerDownload({ href: URL.createObjectURL(zipBlob), name: `ecg_pdf_anonymise_${total}.zip` });
-    }
-
-    setBatchStates(s => ({ ...s, pdfvec: { ...s.pdfvec, running: false } }));
-  }, [allPdfFiles]);
+  }, [allPdfFiles, allEcgData]);
 
   return (
     <div className="glass-card p-5">
@@ -357,23 +356,16 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                   </button>
                 )}
 
-                {/* Convert all — batch button (PDF uses its own popup) */}
-                {!isWip && hasBatch && !batch?.running && fmt.key === 'pdfvec' && allPdfFiles && allPdfFiles.length > 1 && (
+                {/* Convert all — opens the unified batch popup (anon name + table). */}
+                {!isWip && hasBatch && !batch?.running && (
+                  (fmt.key === 'pdfvec' ? (allPdfFiles?.length ?? 0) : (allEcgData?.length ?? 0)) > 1
+                ) && (
                   <button
-                    onClick={() => setShowPdfBatchChoice(true)}
+                    onClick={() => { setIncludeTable(false); setBatchCard(fmt); }}
                     disabled={disabled}
                     className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-[10px] font-medium text-primary transition-all hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    ↗ {t('fmt.convertAll' as TranslationKey)} ({allPdfFiles.length})
-                  </button>
-                )}
-                {!isWip && hasBatch && !batch?.running && fmt.key !== 'pdfvec' && (
-                  <button
-                    onClick={() => setBatchPrompt(fmt)}
-                    disabled={disabled}
-                    className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-[10px] font-medium text-primary transition-all hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    ↗ {t('fmt.convertAll' as TranslationKey)} ({allEcgData!.length})
+                    ↗ {t('fmt.convertAll' as TranslationKey)} ({fmt.key === 'pdfvec' ? allPdfFiles!.length : allEcgData!.length})
                   </button>
                 )}
                 {!isWip && batch?.running && (
@@ -416,19 +408,28 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
         </div>
       )}
 
-      {/* PDF batch download popup — anonymized, files or zip */}
-      {showPdfBatchChoice && createPortal(
+      {/* Unified batch popup (PDF / XML / Image): anonymized-name + correspondence
+          table options, then ZIP or separate files. */}
+      {batchCard && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-md"
-          onClick={() => setShowPdfBatchChoice(false)}
+          onClick={() => setBatchCard(null)}
         >
           <div className="glass-card w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
             <h3 className="mb-3 text-sm font-semibold text-slate-700">
-              {t('fmt.convertAll' as TranslationKey)} — PDF Vectoriel Anonymisé
+              {t('fmt.convertAll' as TranslationKey)} — {batchCard.label}
             </h3>
+            <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" checked={anonName} onChange={e => setAnonName(e.target.checked)} className="accent-primary" />
+              {t('fmt.anonName' as TranslationKey)}
+            </label>
+            <label className={`mb-4 flex items-center gap-2 text-xs ${anonName ? 'cursor-pointer text-slate-600' : 'text-slate-300'}`}>
+              <input type="checkbox" checked={includeTable && anonName} disabled={!anonName} onChange={e => setIncludeTable(e.target.checked)} className="accent-primary" />
+              {t('fmt.corrTable' as TranslationKey)}
+            </label>
             <div className="space-y-2">
               <button
-                onClick={() => { setShowPdfBatchChoice(false); handleConvertAllPdf('zip'); }}
+                onClick={() => { const f = batchCard; setBatchCard(null); runBatch(f, 'zip', anonName, includeTable && anonName); }}
                 className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary text-sm">📦</span>
@@ -438,7 +439,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                 </div>
               </button>
               <button
-                onClick={() => { setShowPdfBatchChoice(false); handleConvertAllPdf('files'); }}
+                onClick={() => { const f = batchCard; setBatchCard(null); runBatch(f, 'files', anonName, includeTable && anonName); }}
                 className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 text-sm">📄</span>
@@ -450,7 +451,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
             </div>
             <div className="mt-4 flex justify-end">
               <button
-                onClick={() => setShowPdfBatchChoice(false)}
+                onClick={() => setBatchCard(null)}
                 className="rounded-lg bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-300"
               >
                 {t('unsupported.close' as TranslationKey)}
@@ -533,51 +534,6 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
                 className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-white transition-all hover:bg-primary-dark"
               >
                 ↓ {t('fmt.download')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Batch download mode choice popup */}
-      {batchPrompt && createPortal(
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-md"
-          onClick={() => setBatchPrompt(null)}
-        >
-          <div className="glass-card w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="mb-3 text-sm font-semibold text-slate-700">
-              {t('fmt.convertAll' as TranslationKey)} — {batchPrompt.label}
-            </h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => { const f = batchPrompt; setBatchPrompt(null); handleConvertAll(f, 'zip'); }}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary text-sm">📦</span>
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">{t('fmt.batch.zip' as TranslationKey)}</div>
-                  <div className="text-[10px] text-slate-400">{t('fmt.batch.zipDesc' as TranslationKey)}</div>
-                </div>
-              </button>
-              <button
-                onClick={() => { const f = batchPrompt; setBatchPrompt(null); handleConvertAll(f, 'files'); }}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 text-left transition-all hover:border-primary/40 hover:bg-white/80"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 text-sm">📄</span>
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">{t('fmt.batch.files' as TranslationKey)}</div>
-                  <div className="text-[10px] text-slate-400">{t('fmt.batch.filesDesc' as TranslationKey)}</div>
-                </div>
-              </button>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setBatchPrompt(null)}
-                className="rounded-lg bg-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-300"
-              >
-                {t('unsupported.close' as TranslationKey)}
               </button>
             </div>
           </div>
