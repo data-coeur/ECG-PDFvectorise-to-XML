@@ -188,8 +188,13 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
     onConvertStart?.();
     try {
       const link = await convertOne(fmt, ecgData, 0);
-      // Content is already anonymous; the choice only sets the download filename.
-      const dl = { href: link.href, name: dlName(fmt.ext, anon) };
+      // Fetch the result into a blob URL so the download fires reliably right
+      // after the (async) conversion — a programmatic click on a same-origin
+      // server URL outside the user gesture is blocked by some browsers, whereas
+      // blob downloads are allowed. Content is already anonymous; the choice only
+      // sets the download filename.
+      const blob = await (await fetch(link.href)).blob();
+      const dl = { href: URL.createObjectURL(blob), name: dlName(fmt.ext, anon) };
       triggerDownload(dl);
       setDownloads(s => ({ ...s, [fmt.key]: dl }));
       setStates(s => ({ ...s, [fmt.key]: 'done' }));

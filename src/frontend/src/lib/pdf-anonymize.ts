@@ -575,7 +575,7 @@ async function processDocPdfjs(doc: PDFDocument, fileBytes: ArrayBuffer, mode: A
     for (const item of items) {
       if (!shouldKeepTextPdfjs(item.text, mode)) continue;
       const isLead = isLeadLabel(item.text);
-      page.drawText(item.text, {
+      page.drawText(toWinAnsi(item.text), {
         x: item.x,
         y: item.y,
         size: item.fontSize,
@@ -589,6 +589,23 @@ async function processDocPdfjs(doc: PDFDocument, fileBytes: ArrayBuffer, mode: A
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Sanitize text for pdf-lib's standard (WinAnsi) fonts. ECG metadata often
+ * carries typographic punctuation that WinAnsi cannot encode — notably the
+ * non-breaking hyphen U+2011 (e.g. "MS‑2007"), which made drawText throw.
+ * Map the common typographic chars to ASCII and drop anything still outside
+ * Latin-1 so the redraw never fails. Accented French chars (≤ 0xFF) survive.
+ */
+function toWinAnsi(s: string): string {
+  return s
+    .replace(/[‐-―]/g, '-')        // hyphens / dashes → -
+    .replace(/[‘’‚‛]/g, "'")
+    .replace(/[“”„]/g, '"')
+    .replace(/…/g, '...')
+    .replace(/ /g, ' ')                 // non-breaking space → space
+    .replace(/[^\x00-\xFF]/g, '');           // drop remaining non-Latin-1
+}
 
 function resolveDict(obj: unknown, doc: PDFDocument): PDFDict | null {
   if (obj instanceof PDFDict) return obj;
