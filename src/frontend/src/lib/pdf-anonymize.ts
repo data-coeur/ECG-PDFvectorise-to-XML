@@ -7,7 +7,7 @@
 
 import {
   PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream, PDFRef,
-  StandardFonts, rgb,
+  StandardFonts, rgb, degrees,
 } from 'pdf-lib';
 import pako from 'pako';
 
@@ -406,25 +406,28 @@ function cleanXObjects(resources: PDFDict, doc: PDFDocument, visited: Set<string
 
 interface TextItem {
   text: string;
-  x: number;  // internal (unrotated) PDF coordinate
-  y: number;  // internal (unrotated) PDF coordinate
+  x: number;  // unrotated PDF (MediaBox) coordinate — baseline origin
+  y: number;  // unrotated PDF (MediaBox) coordinate — baseline origin
   fontSize: number;
 }
 
 interface PageTextData {
   items: TextItem[];
+  rotation: number; // page /Rotate angle (0/90/180/270)
 }
 
 /**
- * Extract text items from pdfjs, converting viewport coordinates back to
- * internal (unrotated) PDF coordinates so pdf-lib drawText works correctly.
+ * Extract text items from pdfjs in unrotated MediaBox coordinates.
  *
- * pdfjs returns transforms in the rotated viewport space.
- * pdf-lib drawText expects coordinates in the unrotated MediaBox space.
+ * pdfjs `getTextContent` already returns the text-matrix translation in the
+ * page's unrotated user space (MediaBox, origin bottom-left) — it does NOT
+ * apply the page /Rotate. So we use transform[4]/[5] directly; no swap.
  *
- * Conversion for /Rotate 90:  internal_x = viewport_y,  internal_y = mediaBoxWidth - viewport_x
- * Conversion for /Rotate 180: internal_x = mediaBoxWidth - viewport_x,  internal_y = mediaBoxHeight - viewport_y
- * Conversion for /Rotate 270: internal_x = mediaBoxHeight - viewport_y,  internal_y = viewport_x
+ * The page /Rotate is applied by the viewer to the whole page, so when we
+ * re-draw kept text we must rotate the glyphs by the same angle (see the
+ * redraw loop's `rotate: degrees(rotation)`); otherwise text drawn flat would
+ * appear sideways once the viewer rotates the page (and a coordinate swap, as
+ * the old code did, mislocated every label into the middle of the trace).
  */
 async function extractTextItems(
   fileBytes: ArrayBuffer,
@@ -437,48 +440,18 @@ async function extractTextItems(
   for (let p = 1; p <= pdfDoc.numPages; p++) {
     const page = await pdfDoc.getPage(p);
     const content = await page.getTextContent();
-
-    // Get page rotation and dimensions from pdf-lib (unrotated MediaBox)
-    const pdfLibPage = doc.getPage(p - 1);
-    const rotation = pdfLibPage.getRotation().angle; // 0, 90, 180, 270
-    const mbWidth = pdfLibPage.getWidth();   // MediaBox width (unrotated)
-    const mbHeight = pdfLibPage.getHeight(); // MediaBox height (unrotated)
+    const rotation = doc.getPage(p - 1).getRotation().angle; // 0, 90, 180, 270
 
     const items: TextItem[] = [];
     for (const item of content.items) {
       if (!('str' in item) || !item.str.trim()) continue;
 
       const t = item.transform;
-      // Font size from transform matrix magnitude (handles rotation)
+      // Font size from transform matrix magnitude (handles rotated text matrix)
       const fontSize = Math.sqrt(t[0] * t[0] + t[1] * t[1]) || 8;
-      // Viewport coordinates
-      const vx = t[4];
-      const vy = t[5];
-
-      // Convert viewport → internal coordinates based on page rotation
-      let ix: number, iy: number;
-      switch (rotation) {
-        case 90:
-          ix = vy;
-          iy = mbWidth - vx;
-          break;
-        case 180:
-          ix = mbWidth - vx;
-          iy = mbHeight - vy;
-          break;
-        case 270:
-          ix = mbHeight - vy;
-          iy = vx;
-          break;
-        default: // 0
-          ix = vx;
-          iy = vy;
-          break;
-      }
-
-      items.push({ text: item.str.trim(), x: ix, y: iy, fontSize });
+      items.push({ text: item.str.trim(), x: t[4], y: t[5], fontSize });
     }
-    result.set(p - 1, { items });
+    result.set(p - 1, { items, rotation });
   }
 
   return result;
@@ -572,6 +545,9 @@ async function processDocPdfjs(doc: PDFDocument, fileBytes: ArrayBuffer, mode: A
     const page = doc.getPage(pageIdx);
     const pageData = allItems.get(pageIdx);
     const items = pageData ? pageData.items : [];
+    // Pre-rotate glyphs by the page /Rotate so they read upright after the
+    // viewer applies the rotation (matches the original rotated text matrix).
+    const rot = pageData ? degrees(pageData.rotation) : degrees(0);
     for (const item of items) {
       if (!shouldKeepTextPdfjs(item.text, mode)) continue;
       const isLead = isLeadLabel(item.text);
@@ -581,6 +557,7 @@ async function processDocPdfjs(doc: PDFDocument, fileBytes: ArrayBuffer, mode: A
         size: item.fontSize,
         font: isLead ? fontBold : font,
         color: rgb(0, 0, 0),
+        rotate: rot,
       });
     }
   }
