@@ -15,9 +15,12 @@ const CONTACT_EMAIL = 'contact@data-coeur.com';
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** True when the modal opened because the drop exceeded the 100-ECG limit —
+   *  shows an explanatory banner instead of jumping here with no context. */
+  overLimit?: boolean;
 }
 
-export default function BatchConversionModal({ open, onClose }: Props) {
+export default function BatchConversionModal({ open, onClose, overLimit }: Props) {
   const { t } = useLanguage();
   if (!open) return null;
 
@@ -33,6 +36,11 @@ export default function BatchConversionModal({ open, onClose }: Props) {
         <h3 className="mb-2 text-base font-semibold text-slate-700">
           {t('batch.title' as TranslationKey)}
         </h3>
+        {overLimit && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs font-medium text-amber-700">
+            {t('batch.overLimit' as TranslationKey)}
+          </p>
+        )}
         <p className="mb-5 text-sm text-slate-500">
           {t('batch.standard.subtitle' as TranslationKey)}
         </p>

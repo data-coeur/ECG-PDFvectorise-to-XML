@@ -19,6 +19,7 @@ const translations = {
     // DropZone
     'drop.label': 'Glissez un fichier ECG ici ou cliquez',
     'drop.sub': 'PDF vectorisé (GE MUSE, Schiller, Mortara, Philips...)',
+    'drop.limit': 'Jusqu\'à 100 ECG par dépôt',
     'drop.preparing': 'Analyse des fichiers...',
     'drop.preparingSingle': 'Lecture et découpe du PDF',
     'drop.preparingProgress': 'Fichier {done} / {total}',
@@ -27,6 +28,7 @@ const translations = {
     'batch.button': 'Traiter une base de données complète',
     'batch.title': 'Conversion par lot',
     'batch.standard.subtitle': 'Pour traiter une base d\'ECG complète, deux solutions sont à votre disposition :',
+    'batch.overLimit': 'La limite est de 100 ECG par dépôt. Vous l\'avez dépassée — pour en traiter davantage, utilisez l\'une des options ci-dessous.',
     'batch.stop': 'Arrêter',
     'batch.stopped': 'Interrompu',
     'batch.option1.title': 'Confier le traitement à notre équipe',
@@ -192,6 +194,7 @@ const translations = {
     // DropZone
     'drop.label': 'Drop an ECG file here or click',
     'drop.sub': 'Vectorized PDF (GE MUSE, Schiller, Mortara, Philips...)',
+    'drop.limit': 'Up to 100 ECGs per drop',
     'drop.preparing': 'Analysing files...',
     'drop.preparingSingle': 'Reading and splitting PDF',
     'drop.preparingProgress': 'File {done} / {total}',
@@ -200,6 +203,7 @@ const translations = {
     'batch.button': 'Process a full database',
     'batch.title': 'Batch conversion',
     'batch.standard.subtitle': 'To process a full ECG database, two options are available:',
+    'batch.overLimit': 'The limit is 100 ECGs per drop. You exceeded it — to process more, use one of the options below.',
     'batch.stop': 'Stop',
     'batch.stopped': 'Stopped',
     'batch.option1.title': 'Let our team handle it',

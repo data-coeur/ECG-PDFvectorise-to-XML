@@ -85,6 +85,7 @@ export default function DropZone({ onFiles, disabled, preparing }: Props) {
             </div>
             <p className="text-base font-medium text-slate-700">{t('drop.label')}</p>
             <p className="mt-1 text-sm text-slate-400">{t('drop.sub')}</p>
+            <p className="mt-1 text-xs text-slate-400">{t('drop.limit' as TranslationKey)}</p>
           </>
         )}
       </div>

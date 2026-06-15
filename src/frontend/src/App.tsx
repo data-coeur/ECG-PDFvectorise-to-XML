@@ -308,7 +308,7 @@ export default function App() {
       )}
 
       {/* Batch conversion modal — "Process a full database" button (standard variant) */}
-      <BatchConversionModal open={showBatch} onClose={() => setShowBatch(false)} />
+      <BatchConversionModal open={showBatch} onClose={() => setShowBatch(false)} overLimit />
 
       {/* Unsupported file type modal */}
       <UnsupportedFileModal
