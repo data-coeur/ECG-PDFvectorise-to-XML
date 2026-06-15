@@ -19,9 +19,19 @@ app.use(express.json({ limit: '60mb' }));
 // API routes
 app.use('/api/ecg', ecgRouter);
 
-// Serve frontend static files (built by Vite)
+// Serve frontend static files (built by Vite). Content-hashed assets under
+// /assets/ are immutable → cache for a year; other files (index.html) stay
+// no-cache so deploys are picked up immediately.
 const frontendDist = path.resolve(__dirname, '../frontend-dist');
-app.use('/ecg', express.static(frontendDist));
+app.use('/ecg', express.static(frontendDist, {
+  setHeaders: (res, filePath) => {
+    if (/[\\/]assets[\\/]/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 app.get('/ecg/*', (_req, res) => {
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
