@@ -161,7 +161,7 @@ export default function FormatCards({ ecgData, disabled, onConvertStart, onConve
   }, [ecgData, imageSel, onConvertStart, onConvertDone, dlName]);
 
   // Always anonymized — both the PDF content AND the filename (the original name
-  // can carry patient identity, e.g. "LASTNAME_FIRSTNAME_…pdf").
+  // can carry patient identity, e.g. "LASTNAME_FIRSTNAME_<dob>_<id>.pdf").
   const handlePdfDownload = useCallback(async () => {
     if (!pdfFile) return;
     setStates(s => ({ ...s, pdfvec: 'loading' }));
