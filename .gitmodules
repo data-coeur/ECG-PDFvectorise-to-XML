@@ -1,0 +1,4 @@
+[submodule "deepecg"]
+	path = deepecg
+	url = https://github.com/benoitleq/DeepECGAnalyser.git
+	branch = main
