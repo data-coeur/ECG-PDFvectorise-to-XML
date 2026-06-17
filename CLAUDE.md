@@ -80,7 +80,7 @@ ecg-pipeline/
 │   │   │   │       └── profiles/                  # Manufacturer detection + thresholds
 │   │   │   │           ├── detect-manufacturer.ts # Detection cascade
 │   │   │   │           ├── registry.ts            # Profile registry
-│   │   │   │           └── manufacturers/         # GE MUSE, Schiller, Schiller CS, Mortara/Burdick, PTB-XL, Vectracor
+│   │   │   │           └── manufacturers/         # GE MUSE, Schiller, Schiller CS, Mortara/Burdick, PTB-XL, Vectracor, AMPS-LLC
 │   │   │   └── i18n/                      # FR/EN translations with interpolation support
 │   │   └── package.json                   # Dependencies: pdfjs-dist, jszip, pdf-lib
 │   └── backend/                   # Node.js (Express) — API server
@@ -119,7 +119,7 @@ Ignore when analyzing:
 
 ## Current Status
 - [x] ECG extractor (PDF vectorisé → signal mV) — React/pdfjs, multi-manufacturer
-- [x] Manufacturer profiles: GE MUSE, Schiller (red grid), Schiller CS (pink grid/SC ops), Mortara/Burdick, PTB-XL, Vectracor
+- [x] Manufacturer profiles: GE MUSE, Schiller (red grid), Schiller CS (pink grid/SC ops), Mortara/Burdick, PTB-XL, Vectracor, AMPS-LLC (libharu, grille per-segment + signal continu, paysage, démographie en image raster)
 - [x] Orientation normalization: auto-detect 90/180/270° content-stream rotation
 - [x] File type detection: vectorized PDF, raster PDF, images, ECG XML, DICOM, unknown
 - [x] Batch processing: sequential queue up to 100 files, stop button, time estimate, image pre-cache

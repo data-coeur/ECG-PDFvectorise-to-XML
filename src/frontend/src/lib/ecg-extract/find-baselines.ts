@@ -62,16 +62,29 @@ export function findBaselineForTrace(
 ): number {
   const valueAxis = layout.timeAxis === 'x' ? 'y' : 'x';
   const vs = pts.map(p => p[valueAxis]);
+  const vMin = Math.min(...vs), vMax = Math.max(...vs);
 
-  // Path 1: explicit calibration pulses
+  // Path 1: explicit calibration pulses — but only when one actually sits at
+  // this trace's height. A stacked 12×1 layout sometimes prints a single 1 mV
+  // reference pulse for the whole page; blindly snapping every lead to that one
+  // pulse would offset 11 of them by their distance down the stack. A genuine
+  // per-lead pulse always lies within (or very close to) the trace's own value
+  // range, so reject any nearest pulse farther than `tol` from [vMin, vMax].
   if (calBaselines.length > 0) {
-    const vCenter = (Math.min(...vs) + Math.max(...vs)) / 2;
+    const vCenter = (vMin + vMax) / 2;
     let nearest = calBaselines[0], minDist = Math.abs(vCenter - calBaselines[0]);
     for (let i = 1; i < calBaselines.length; i++) {
       const d = Math.abs(vCenter - calBaselines[i]);
       if (d < minDist) { minDist = d; nearest = calBaselines[i]; }
     }
-    return nearest;
+    // A genuine per-lead pulse sits at the isoelectric line, i.e. inside the
+    // trace's value excursion. Allow only a small margin (≈2 mm) for pulses
+    // drawn just past the signal edge — anything more would let a lead snap to
+    // its neighbour's pulse (cells are only ~10 mm tall in 12×1 layouts).
+    const spacing = valueAxis === 'y' ? grid?.spacingY : grid?.spacingX;
+    const tol = spacing && spacing > 0 ? spacing * 2 : (vMax - vMin) * 0.25;
+    if (nearest >= vMin - tol && nearest <= vMax + tol) return nearest;
+    // Otherwise fall through to the per-trace grid-snapped mode estimate.
   }
 
   // Robust baseline estimate via 1-pt histogram mode

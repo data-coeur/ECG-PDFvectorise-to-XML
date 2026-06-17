@@ -6,7 +6,7 @@
 // "PDF anonymisé"). Raison : ne jamais transmettre de PHI hors du navigateur.
 
 import {
-  PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream, PDFRef,
+  PDFDocument, PDFName, PDFNumber, PDFDict, PDFArray, PDFRawStream, PDFRef,
   StandardFonts, rgb, degrees,
 } from 'pdf-lib';
 import pako from 'pako';
@@ -30,6 +30,43 @@ function strToBytes(text: string): Uint8Array {
   const buf = new Uint8Array(text.length);
   for (let i = 0; i < text.length; i++) buf[i] = text.charCodeAt(i);
   return buf;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Stream filter helpers — robust to the /Filter array form           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Whether a stream is FlateDecode-compressed. Accepts both the bare name
+ * `/FlateDecode` and the single-filter array form `[ /FlateDecode ]` —
+ * the latter is emitted by libharu (AMPS-LLC converter) and was previously
+ * missed by a strict `=== '/FlateDecode'` check, leaving content streams
+ * un-inflated (so text was neither detected nor stripped). Chained filters
+ * (e.g. image codecs) are rejected: pako alone can't round-trip them.
+ */
+function streamIsFlate(stream: PDFRawStream): boolean {
+  const f = stream.dict.get(PDFName.of('Filter'));
+  if (!f) return false;
+  const s = f.toString();
+  return /FlateDecode/.test(s) &&
+    !/(DCTDecode|LZWDecode|RunLengthDecode|ASCII85Decode|ASCIIHexDecode|JBIG2Decode|JPXDecode)/.test(s);
+}
+
+/** Decode a raw stream to a latin1 string, transparently inflating Flate. */
+function decodeStream(stream: PDFRawStream): { text: string; isFlate: boolean } | null {
+  const isFlate = streamIsFlate(stream);
+  try {
+    const data = isFlate ? pako.inflate(stream.contents) : stream.contents;
+    return { text: bytesToStr(data), isFlate };
+  } catch { return null; }
+}
+
+/** Write a (possibly Flate-recompressed) string back into a raw stream. */
+function writeStream(stream: PDFRawStream, text: string, isFlate: boolean): void {
+  const bytes = strToBytes(text);
+  const output = isFlate ? pako.deflate(bytes) : bytes;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (stream as any).contents = output;
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,12 +319,9 @@ function isRawTextReadable(doc: PDFDocument): boolean {
   const checkStream = (ref: PDFRef): boolean => {
     const stream = doc.context.lookup(ref);
     if (!(stream instanceof PDFRawStream)) return false;
-    const f = stream.dict.get(PDFName.of('Filter'));
-    const filter = f ? f.toString() : null;
-    let data: Uint8Array;
-    try { data = filter === '/FlateDecode' ? pako.inflate(stream.contents) : stream.contents; }
-    catch { return false; }
-    const text = bytesToStr(data);
+    const dec = decodeStream(stream);
+    if (!dec) return false;
+    const text = dec.text;
     const blocks = findBTBlocks(text);
     for (const block of blocks) {
       const t = extractTjText(block.body).trim();
@@ -340,17 +374,10 @@ function processStreamDirect(stream: string, mode: AnonMode): string {
 }
 
 function replaceStreamDirect(oldStream: PDFRawStream, mode: AnonMode): void {
-  const f = oldStream.dict.get(PDFName.of('Filter'));
-  const filter = f ? f.toString() : null;
-  let data: Uint8Array;
-  try { data = filter === '/FlateDecode' ? pako.inflate(oldStream.contents) : oldStream.contents; }
-  catch { return; }
-  const text = bytesToStr(data);
-  const cleaned = processStreamDirect(text, mode);
-  const cleanedBytes = strToBytes(cleaned);
-  const output = filter === '/FlateDecode' ? pako.deflate(cleanedBytes) : cleanedBytes;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (oldStream as any).contents = output;
+  const dec = decodeStream(oldStream);
+  if (!dec) return;
+  const cleaned = processStreamDirect(dec.text, mode);
+  writeStream(oldStream, cleaned, dec.isFlate);
 }
 
 function processDocDirect(doc: PDFDocument, mode: AnonMode): void {
@@ -467,17 +494,10 @@ function stripAllText(stream: string): string {
 }
 
 function stripStreamText(oldStream: PDFRawStream): void {
-  const f = oldStream.dict.get(PDFName.of('Filter'));
-  const filter = f ? f.toString() : null;
-  let data: Uint8Array;
-  try { data = filter === '/FlateDecode' ? pako.inflate(oldStream.contents) : oldStream.contents; }
-  catch { return; }
-  const text = bytesToStr(data);
-  const cleaned = stripAllText(text);
-  const cleanedBytes = strToBytes(cleaned);
-  const output = filter === '/FlateDecode' ? pako.deflate(cleanedBytes) : cleanedBytes;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (oldStream as any).contents = output;
+  const dec = decodeStream(oldStream);
+  if (!dec) return;
+  const cleaned = stripAllText(dec.text);
+  writeStream(oldStream, cleaned, dec.isFlate);
 }
 
 function stripAllXObjectText(resources: PDFDict, doc: PDFDocument, visited: Set<string>): void {
@@ -619,6 +639,130 @@ function stripAnnotations(doc: PDFDocument): void {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Image redaction — drop raster banners that may carry burned-in PHI */
+/* ------------------------------------------------------------------ */
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Erase an image XObject's pixel bytes in place. Dropping the `Do` invocation
+ * only stops it from being drawn — the (still-compressed) PHI pixels survive in
+ * the file and are trivially recoverable. We must wipe the stream contents too.
+ * The image becomes a 1×1 white pixel: the bytes carrying the demographics are
+ * gone, yet the object stays a structurally valid image.
+ */
+function blankImageStream(stream: PDFRawStream): void {
+  const dict = stream.dict;
+  const csName = dict.get(PDFName.of('ColorSpace'))?.toString() ?? '';
+  const comps = /Gray/.test(csName) ? 1 : /CMYK/.test(csName) ? 4 : 3; // default RGB
+  const white = new Uint8Array(comps).fill(0xff);                       // one white pixel
+  const deflated = pako.deflate(white);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (stream as any).contents = deflated;
+  dict.set(PDFName.of('Length'), PDFNumber.of(deflated.length));
+  dict.set(PDFName.of('Width'), PDFNumber.of(1));
+  dict.set(PDFName.of('Height'), PDFNumber.of(1));
+  dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
+  dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+  // Drop transforms that would no longer match a 1×1 image.
+  for (const k of ['DecodeParms', 'SMask', 'Mask', 'Decode']) {
+    try { dict.delete(PDFName.of(k)); } catch { /* ok */ }
+  }
+}
+
+/**
+ * Names (e.g. "/X1") in a Resources/XObject dict that point to image streams,
+ * blanking each image's pixels as a side effect (see `blankImageStream`).
+ */
+function imageXObjectNames(resources: PDFDict, doc: PDFDocument): string[] {
+  const xObjDict = resolveDict(resources.get(PDFName.of('XObject')), doc);
+  if (!xObjDict) return [];
+  const names: string[] = [];
+  for (const [key, ref] of xObjDict.entries()) {
+    const obj = ref instanceof PDFRef ? doc.context.lookup(ref) : ref;
+    if (!(obj instanceof PDFRawStream)) continue;
+    const subtype = obj.dict.get(PDFName.of('Subtype'));
+    if (subtype && subtype.toString() === '/Image') {
+      names.push(key.toString());
+      blankImageStream(obj);
+    }
+  }
+  return names;
+}
+
+/** Remove every `/Name Do` invocation for the given image XObject names. */
+function removeImageDrawsFromStream(stream: PDFRawStream, names: string[]): number {
+  if (!names.length) return 0;
+  const dec = decodeStream(stream);
+  if (!dec) return 0;
+  let removed = 0;
+  let text = dec.text;
+  for (const n of names) {
+    const re = new RegExp(escapeRe(n) + '\\s+Do\\b', 'g');
+    text = text.replace(re, () => { removed++; return ''; });
+  }
+  if (removed) writeStream(stream, text, dec.isFlate);
+  return removed;
+}
+
+/**
+ * De-identify raster content: many converters (AMPS-LLC / libharu, scanned
+ * exports…) render the demographics banner, hospital header and footer as
+ * images rather than text, so text stripping alone leaves PHI fully visible.
+ * The ECG signal and grid of supported vectorized PDFs are vector paths, never
+ * images — so suppressing image draws removes the identifying banners without
+ * touching the trace. We drop the `Do` invocations (leaving the XObjects
+ * orphaned) rather than rewriting pixels, which is colorspace/codec-agnostic.
+ */
+function redactImages(doc: PDFDocument): number {
+  let total = 0;
+  const visited = new Set<string>();
+
+  const walkForms = (resources: PDFDict): void => {
+    const xObjDict = resolveDict(resources.get(PDFName.of('XObject')), doc);
+    if (!xObjDict) return;
+    for (const [, ref] of xObjDict.entries()) {
+      if (!(ref instanceof PDFRef)) continue;
+      const key = ref.toString();
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const obj = doc.context.lookup(ref);
+      if (!(obj instanceof PDFRawStream)) continue;
+      const subtype = obj.dict.get(PDFName.of('Subtype'));
+      if (!subtype || subtype.toString() !== '/Form') continue;
+      const subRes = resolveDict(obj.dict.get(PDFName.of('Resources')), doc);
+      if (!subRes) continue;
+      total += removeImageDrawsFromStream(obj, imageXObjectNames(subRes, doc));
+      walkForms(subRes);
+    }
+  };
+
+  for (const page of doc.getPages()) {
+    const node = page.node;
+    const resources = resolveDict(node.get(PDFName.of('Resources')), doc);
+    if (!resources) continue;
+    const names = imageXObjectNames(resources, doc);
+
+    const contents = node.get(PDFName.of('Contents'));
+    if (contents instanceof PDFRef) {
+      const stream = doc.context.lookup(contents);
+      if (stream instanceof PDFRawStream) total += removeImageDrawsFromStream(stream, names);
+    } else if (contents instanceof PDFArray) {
+      for (let i = 0; i < contents.size(); i++) {
+        const ref = contents.get(i);
+        if (!(ref instanceof PDFRef)) continue;
+        const stream = doc.context.lookup(ref);
+        if (stream instanceof PDFRawStream) total += removeImageDrawsFromStream(stream, names);
+      }
+    }
+    walkForms(resources);
+  }
+  return total;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -630,6 +774,11 @@ export async function anonymizePdf(
 
   stripMetadata(doc);
   stripAnnotations(doc);
+
+  // Suppress raster banners (demographics/header/footer images) that text
+  // stripping can't reach. Harmless to vector ECG signal+grid.
+  const imagesRemoved = redactImages(doc);
+  console.log(`[anonymize] Image draws removed: ${imagesRemoved}`);
 
   const readable = isRawTextReadable(doc);
   console.log(`[anonymize] mode=${mode}, rawTextReadable=${readable}, pages=${doc.getPageCount()}`);

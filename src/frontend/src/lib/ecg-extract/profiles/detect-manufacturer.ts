@@ -2,7 +2,7 @@
 // Cascade des signaux les moins coûteux aux plus coûteux :
 //   1. Metadata (Producer/Creator/Author) — fiable quand présent
 //   2. Taille de page (>2000 pt → Mortara/Burdick)
-//   3. Empreinte per-segment (>3000 polylignes 2-pts → Vectracor)
+//   3. Empreinte per-segment (>3000 polylignes 2-pts → Vectracor / AMPS-LLC)
 //   4. Couleur de grille (rouge pur → Schiller, rose → Schiller CS)
 // In  : metadata + viewport + Polyline[]. Out : nom string (sinon "Unknown").
 
@@ -25,13 +25,26 @@ export function detectManufacturer(
   const maxDim = Math.max(pageSize.width, pageSize.height);
   if (maxDim > 2000) return 'Mortara/Burdick';
 
-  // 3. Per-segment subpath fingerprint (Vectracor, some Philips/Cardioline)
-  // Normal clinical ECGs have at most a few hundred polylines; > 3000 of
-  // them with > 80% being 2-point is a very specific signature.
+  // 3. Per-segment subpath fingerprint (Vectracor, AMPS-LLC, some
+  // Philips/Cardioline). Normal clinical ECGs have at most a few hundred
+  // polylines; > 3000 of them with > 80% being 2-point is a very specific
+  // signature. Two converters share it but differ in one crucial way:
+  //   - Vectracor draws *everything* (grid AND signal) as 2-point segments,
+  //     portrait, time top-to-bottom → needs welding + forced 90° rotation.
+  //   - AMPS-LLC (libharu "Haru" producer) draws only the GRID as segments;
+  //     the signal is already continuous, the page is landscape, time on X →
+  //     weld the grid but do NOT rotate.
+  // Tell them apart by whether long continuous dark traces (the pre-drawn
+  // signal) already exist before any welding: Vectracor has none.
   if (polylines.length > 3000) {
     let twoPt = 0;
     for (const p of polylines) if (p.pts.length === 2) twoPt++;
-    if (twoPt / polylines.length > 0.8) return 'Vectracor';
+    if (twoPt / polylines.length > 0.8) {
+      const longDark = polylines.filter(p =>
+        p.pts.length >= 50 && p.col[0] < 0.4 && p.col[1] < 0.4 && p.col[2] < 0.4
+      ).length;
+      return longDark >= 6 ? 'AMPS-LLC' : 'Vectracor';
+    }
   }
 
   // 4. Grid colour signatures

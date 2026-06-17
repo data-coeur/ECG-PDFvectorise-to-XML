@@ -1,5 +1,6 @@
 // profiles/registry — table { nom → DeepPartial } des 6 fabricants supportés
 // + resolveProfile(name) qui applique deepMerge(DEFAULT_PROFILE, override).
+// (7 fabricants : les 6 historiques + AMPS-LLC.)
 // In  : nom de fabricant (string). Out : ManufacturerProfile complet.
 // Appelé par index.ts juste après detect-manufacturer.
 // Raison : centraliser la résolution defaults+override dans un seul endroit.
@@ -10,6 +11,7 @@ import { SCHILLER_CS } from './manufacturers/schiller-cs';
 import { MORTARA_BURDICK } from './manufacturers/mortara-burdick';
 import { PTBXL } from './manufacturers/ptbxl';
 import { VECTRACOR } from './manufacturers/vectracor';
+import { AMPS_LLC } from './manufacturers/amps-llc';
 import { DEFAULT_PROFILE } from './types';
 import type { DeepPartial, ManufacturerProfile } from './types';
 
@@ -20,6 +22,7 @@ const REGISTRY: Record<string, DeepPartial<ManufacturerProfile>> = {
   'Mortara/Burdick': MORTARA_BURDICK,
   'PTB-XL': PTBXL,
   'Vectracor': VECTRACOR,
+  'AMPS-LLC': AMPS_LLC,
 };
 
 // Resolve a manufacturer name into a complete profile (defaults + overrides).

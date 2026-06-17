@@ -63,8 +63,12 @@ export function convertToMv(
     return { samples: sorted.map(p => toMv(p[valueAxis])), dur: duration };
   }
 
-  // Non-uniform — linearly interpolate onto a uniform 500 Hz grid.
-  const targetCount = Math.max(2, Math.round(duration * RESAMPLE_RATE_HZ));
+  // Non-uniform — linearly interpolate onto a uniform grid. Resample at 500 Hz,
+  // but never below the source's own resolution: decimating a dense trace
+  // (e.g. AMPS-LLC ~1000 Hz) onto a coarser grid would clip the sharp QRS tips.
+  // Sparse traces keep the previous behaviour (their point count stays under
+  // the 500 Hz target, so the max() picks the 500 Hz grid).
+  const targetCount = Math.max(2, Math.round(duration * RESAMPLE_RATE_HZ), sorted.length);
   const tSpan = tEnd - tStart;
   const dt = tSpan / (targetCount - 1);
   const samples = new Array<number>(targetCount);
