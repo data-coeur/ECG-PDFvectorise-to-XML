@@ -93,7 +93,12 @@ def build_standard_config(theme="turquoise"):
             "lead_text_size": 4,
         },
         "reference_pulse": {
-            "number_of_ref_pulse": "one",
+            # "none" désactive l'impulsion de calibration synthétique. Avec "one",
+            # le rendu la place sur une seule rangée (position 7 = V1) et comprime
+            # le signal de CETTE rangée pour lui faire de la place → V1 désaligné
+            # des autres leads. La calibration reste lisible via la grille + le
+            # texte "25 mm/s 10 mm/mV", donc on ne dessine pas d'impulsion factice.
+            "number_of_ref_pulse": "none",
             "horizontal_position_ref_pulse": "right",
             "vertical_position_ref_pulse": 7,
             "pulse_and_signal_space": True,
